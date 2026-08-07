@@ -2139,7 +2139,7 @@ Transcript:
         if device == "auto":
             try:
                 import ctranslate2
-                device = "cuda" if "cuda" in ctranslate2.get_supported_compute_types("cuda") else "cpu"
+                device = "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
             except Exception:
                 device = "cpu"
         

@@ -1314,18 +1314,12 @@ class YTShortClipperApp(ctk.CTk):
                 # Call find_highlights_only (returns session data - subtitle only, no video)
                 result = core.find_highlights_only(url, num_clips)
             except SubtitleNotFoundError as snf:
-                # No subtitle found - can't proceed without video for Whisper
+                # No subtitle found - offer Whisper transcription fallback (local or API)
                 if self.cancelled:
                     self.after(0, self.on_cancelled)
                     return
                 
-                self.after(0, lambda: self.on_error(
-                    f"No subtitle available for language: {subtitle_lang.upper()}\n\n"
-                    "This video doesn't have the selected subtitle.\n\n"
-                    "Tips:\n"
-                    "1. Go back and select a different subtitle language\n"
-                    "2. Try a video that has subtitles available"
-                ))
+                self.after(0, lambda: self._show_whisper_fallback_dialog(core, snf, num_clips))
                 return
             
             if not self.cancelled and result:
@@ -1356,18 +1350,21 @@ class YTShortClipperApp(ctk.CTk):
         self.steps[0].set_done("Downloaded (no subtitle)")
         self.pages["processing"].update_status("No subtitle found for this video.")
         
-        # Check if Caption Maker is configured
+        # Check if a transcription method is available:
+        # Local Whisper enabled, OR Caption Maker API key configured.
+        local_whisper_enabled = self.config.get("local_whisper", {}).get("enabled", False)
         ai_providers = self.config.get("ai_providers", {})
         cm_config = ai_providers.get("caption_maker", {})
         cm_api_key = cm_config.get("api_key", "").strip()
         
-        if not cm_api_key:
+        if not local_whisper_enabled and not cm_api_key:
             self.on_error(
                 "No subtitle found for this video.\n\n"
-                "You can use AI transcription (Whisper API) as a fallback,\n"
-                "but Caption Maker is not configured yet.\n\n"
+                "You can use AI transcription (Whisper) as a fallback,\n"
+                "but it's not configured yet.\n\n"
                 "Please set it up in:\n"
-                "Settings → AI API Settings → Caption Maker"
+                "Settings → AI API Settings → Caption Maker\n"
+                "(enable Local Whisper, or add a Caption Maker API key)"
             )
             return
         

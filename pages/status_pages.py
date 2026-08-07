@@ -167,6 +167,8 @@ class APIStatusPage(ctk.CTkFrame):
             # Get config
             config = self.get_config()
             ai_providers = config.get("ai_providers", {})
+            local_whisper_cfg = config.get("local_whisper", {})
+            local_whisper_enabled = local_whisper_cfg.get("enabled", False)
             
             # Check each AI provider
             providers_to_check = [
@@ -177,6 +179,15 @@ class APIStatusPage(ctk.CTkFrame):
             ]
             
             for provider_key, status_label, info_label in providers_to_check:
+                # Caption Maker: if Local Whisper is enabled, it doesn't need an API key.
+                if provider_key == "caption_maker" and local_whisper_enabled:
+                    model_size = local_whisper_cfg.get("model_size", "large-v3-turbo")
+                    self.after(0, lambda sl=status_label, il=info_label, m=model_size: (
+                        sl.configure(text="✓ Local Whisper", text_color="green"),
+                        il.configure(text=f"Model: {m} (local)")
+                    ))
+                    continue
+                
                 provider_config = ai_providers.get(provider_key, {})
                 api_key = provider_config.get("api_key", "")
                 base_url = provider_config.get("base_url", "https://api.openai.com/v1")
