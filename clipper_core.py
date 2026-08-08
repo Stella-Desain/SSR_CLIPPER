@@ -1684,6 +1684,15 @@ Transcript:
         ffmpeg_path = get_ffmpeg_path()
         deno_path = get_deno_path()
         
+        # Validasi pintar FFmpeg (dukung fallback sistem)
+        ffmpeg_is_system = (ffmpeg_path == "ffmpeg")
+        if not (ffmpeg_is_system or (ffmpeg_path and Path(ffmpeg_path).exists())):
+            raise Exception(
+                "❌ ERROR: FFmpeg tidak ditemukan atau path tidak valid.\n"
+                f"Path yang terdeteksi: {ffmpeg_path}\n"
+                "Harap cek konfigurasi FFmpeg di halaman Settings."
+            )
+        
         # Setup Deno in PATH
         if deno_path and Path(deno_path).exists():
             deno_dir = str(Path(deno_path).parent)
@@ -1706,6 +1715,24 @@ Transcript:
                     self.set_progress(f"Downloading video section... {percent:.1f}%", 0)
             elif d['status'] == 'finished':
                 self.log("  Section download finished, processing...")
+                
+        # Setup Logger custom untuk menangkap output ffmpeg yang biasanya dibuang oleh yt-dlp
+        class YtDlpLogger:
+            def __init__(self, core_log):
+                self.core_log = core_log
+                self.messages = []
+            def debug(self, msg):
+                pass
+            def info(self, msg):
+                pass
+            def warning(self, msg):
+                self.messages.append(f"WARN: {msg}")
+                self.core_log(f"    [yt-dlp warn] {msg[:100]}")
+            def error(self, msg):
+                self.messages.append(f"ERR: {msg}")
+                self.core_log(f"    [yt-dlp err] {msg[:100]}")
+        
+        yt_logger = YtDlpLogger(self.log)
         
         # Format selector
         format_selector = "bestvideo[height>=720][height<=2160]+bestaudio/best[height>=720][height<=2160]/bestvideo+bestaudio/best"
@@ -1717,12 +1744,18 @@ Transcript:
             'outtmpl': output_path,
             'progress_hooks': [progress_hook],
             'quiet': True,
+            'logger': yt_logger,
             'no_warnings': False,
             'download_ranges': yt_dlp.utils.download_range_func(None, [(
                 self.parse_timestamp(start_time),
                 self.parse_timestamp(end_time)
             )]),
-            'force_keyframes_at_cuts': True,
+            'force_keyframes_at_cuts': True,  # Hipotesis kerja: Ini bisa memicu crash FFmpeg pada codec tertentu
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['tv', 'ios', 'web_safari'],
+                }
+            }
         }
         
         # Add Deno JS runtime
@@ -1731,7 +1764,7 @@ Transcript:
             ydl_opts['remote_components'] = ['ejs:github']
         
         # Add FFmpeg location
-        if ffmpeg_path and Path(ffmpeg_path).exists():
+        if not ffmpeg_is_system:
             ydl_opts['ffmpeg_location'] = str(Path(ffmpeg_path).parent)
         
         # Add cookies
@@ -1751,13 +1784,45 @@ Transcript:
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
-            
             self.log(f"  ✓ Section downloaded!")
             
         except Exception as e:
-            last_error = str(e)
-            self.log(f"  ✗ Section download failed: {last_error[:100]}")
-            raise Exception(f"Failed to download video section!\n\n{last_error}")
+            self.log(f"  ⚠ Download gagal ({str(e)[:60]}). Mencoba fallback tanpa re-encode...")
+            self.log(f"    [Diagnostic] FFmpeg: {ffmpeg_path}")
+            
+            # Reset log messages
+            yt_logger.messages = []
+            
+            # FALLBACK: Matikan opsi yang diduga memicu crash FFmpeg
+            ydl_opts['force_keyframes_at_cuts'] = False
+            
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl_fallback:
+                    ydl_fallback.download([url])
+                self.log(f"  ✓ Section downloaded (Fallback Mode)!")
+            except Exception as fallback_e:
+                last_error = str(fallback_e)
+                self.log(f"  ✗ Fallback section download failed: {last_error[:100]}")
+                
+                raw_logs = "\n".join(yt_logger.messages[-5:]) if yt_logger.messages else "No yt-dlp error logs captured."
+                
+                # Cek khusus untuk SABR / client error
+                is_sabr_error = any("SABR" in log for log in yt_logger.messages) or any("missing a url" in log.lower() for log in yt_logger.messages)
+                if is_sabr_error:
+                    raise Exception(
+                        "❌ YouTube sedang membatasi akses stream untuk video ini (SABR streaming restriction).\n"
+                        "Coba update yt-dlp ke versi terbaru lewat halaman Settings, atau video ini "
+                        "mungkin sementara tidak bisa dipotong secara live (section-cut)."
+                    )
+                
+                raise Exception(
+                    f"Gagal mendownload bagian video (termasuk fallback)!\n\n"
+                    f"Error: {last_error}\n\n"
+                    f"Diagnostic Info:\n"
+                    f"- FFmpeg Path: {ffmpeg_path}\n"
+                    f"- Fallback force_keyframes_at_cuts: False\n"
+                    f"- Yt-Dlp Logs:\n{raw_logs}"
+                )
         
         # Find the actual output file (yt-dlp may add extension)
         output_dir = Path(output_path).parent
