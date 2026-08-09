@@ -2,110 +2,269 @@ window.Components = window.Components || {};
 
 window.Components.HomeView = function () {
   const section = document.createElement('section');
-  section.className = 'card glass entrance view';
-  section.dataset.view = 'home';
+  section.className = 'view entrance';
+  section.dataset.view = 'create-clip';
 
-  const title = document.createElement('div');
-  title.className = 'section-title';
-  title.textContent = 'YouTube URL';
+  // Page header
+  const pageHeader = document.createElement('div');
+  pageHeader.style.marginBottom = '28px';
+  pageHeader.innerHTML = `<h1 class="page-title">Create Clip</h1><p class="page-subtitle">An easy way to create clips with care and precision.</p>`;
+  section.appendChild(pageHeader);
 
-  const inputRow = document.createElement('div');
-  inputRow.className = 'input-row';
-
-  const url = document.createElement('input');
-  url.className = 'input';
-  url.placeholder = 'Paste YouTube link here';
-  url.id = 'url';
-
-  const start = document.createElement('button');
-  start.id = 'start';
-  start.className = 'btn primary';
-  start.textContent = 'Start';
-
-  inputRow.appendChild(url);
-  inputRow.appendChild(start);
-
+  // 3-col grid
   const grid = document.createElement('div');
-  grid.className = 'grid';
+  grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;min-height:calc(100vh - 220px);';
 
-  function makeField(labelText, inputEl) {
-    const field = document.createElement('div');
-    field.className = 'field';
-    const label = document.createElement('div');
-    label.className = 'label';
-    label.textContent = labelText;
-    field.appendChild(label);
-    field.appendChild(inputEl);
-    return field;
+  // ── Column 1: Configuration ──
+  const col1 = document.createElement('div');
+  col1.style.cssText = 'display:flex;flex-direction:column;gap:16px;';
+
+  const configCard = document.createElement('div');
+  configCard.className = 'card';
+  configCard.style.cssText = 'flex:1;display:flex;flex-direction:column;';
+
+  const configHeader = document.createElement('div');
+  configHeader.className = 'card-header';
+  configHeader.innerHTML = `
+    <h2 class="card-title">Configuration</h2>
+    <button class="btn btn-outline" id="cookies-btn">
+      <svg style="width:14px;height:14px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      Cookies
+    </button>
+  `;
+  configCard.appendChild(configHeader);
+
+  const configBody = document.createElement('div');
+  configBody.className = 'card-body';
+  configBody.style.cssText = 'flex:1;display:flex;flex-direction:column;';
+
+  // YouTube Link
+  const urlGroup = document.createElement('div');
+  urlGroup.style.marginBottom = '20px';
+  urlGroup.innerHTML = `<label class="field-label" style="display:block;margin-bottom:6px;">Link Youtube</label>`;
+  const urlRow = document.createElement('div');
+  urlRow.style.cssText = 'display:flex;gap:8px;';
+  const urlInput = document.createElement('input');
+  urlInput.className = 'input';
+  urlInput.id = 'url';
+  urlInput.type = 'text';
+  urlInput.placeholder = 'Paste YouTube link here...';
+  urlInput.style.flex = '1';
+  const pasteBtn = document.createElement('button');
+  pasteBtn.className = 'btn btn-outline';
+  pasteBtn.textContent = 'Paste';
+  pasteBtn.addEventListener('click', async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      urlInput.value = text;
+    } catch {}
+  });
+  urlRow.appendChild(urlInput);
+  urlRow.appendChild(pasteBtn);
+  urlGroup.appendChild(urlRow);
+  configBody.appendChild(urlGroup);
+
+  // Options section
+  const optLabel = document.createElement('label');
+  optLabel.className = 'field-label';
+  optLabel.style.cssText = 'display:block;margin-bottom:10px;';
+  optLabel.textContent = 'Options';
+  configBody.appendChild(optLabel);
+
+  const toggles = document.createElement('div');
+  toggles.style.cssText = 'display:flex;flex-direction:column;gap:8px;flex:1;';
+
+  function makeToggle(label, sub, id, checked) {
+    const item = document.createElement('div');
+    item.className = 'toggle-item';
+    const left = document.createElement('div');
+    left.innerHTML = `<div class="toggle-item-label">${label}</div><div class="toggle-item-sub">${sub}</div>`;
+    const sw = document.createElement('label');
+    sw.className = 'toggle-switch';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.id = id;
+    input.checked = checked;
+    const slider = document.createElement('span');
+    slider.className = 'toggle-slider';
+    sw.appendChild(input);
+    sw.appendChild(slider);
+    item.appendChild(left);
+    item.appendChild(sw);
+    return { element: item, input };
   }
 
-  const clips = document.createElement('select');
-  clips.className = 'select';
-  clips.id = 'clips';
-  clips.innerHTML = '<option value="3">3 clips</option><option value="5" selected>5 clips</option><option value="8">8 clips</option>';
+  const clipsToggle = makeToggle('Num Clips', '5 clips', 'num-clips-toggle', true);
+  const captionsToggle = makeToggle('Auto Captions', 'Add captions', 'captions', true);
+  const hookToggle = makeToggle('Hook Scene', 'Add hook', 'hook', false);
+  const portraitToggle = makeToggle('Portrait Mode', '9:16 crop', 'portrait', true);
 
-  const subtitle = document.createElement('select');
-  subtitle.className = 'select';
-  subtitle.id = 'subtitle';
-  subtitle.innerHTML = '<option value="id" selected>Indonesian</option><option value="en">English</option>';
+  toggles.appendChild(clipsToggle.element);
+  toggles.appendChild(captionsToggle.element);
+  toggles.appendChild(hookToggle.element);
+  toggles.appendChild(portraitToggle.element);
+  configBody.appendChild(toggles);
 
-  const capSwitch = makeSwitch('Auto captions', 'captions', true);
-  const hookSwitch = makeSwitch('Hook scene', 'hook', false);
+  // Clips select (hidden, keep for API)
+  const clipsSelect = document.createElement('select');
+  clipsSelect.className = 'hidden';
+  clipsSelect.id = 'clips';
+  clipsSelect.innerHTML = '<option value="3">3</option><option value="5" selected>5</option><option value="8">8</option>';
+  configBody.appendChild(clipsSelect);
 
-  grid.appendChild(makeField('Clips', clips));
-  grid.appendChild(makeField('Subtitle', subtitle));
-  grid.appendChild(capSwitch);
-  grid.appendChild(hookSwitch);
+  // Subtitle select (hidden)
+  const subtitleSelect = document.createElement('select');
+  subtitleSelect.className = 'hidden';
+  subtitleSelect.id = 'subtitle';
+  subtitleSelect.innerHTML = '<option value="id" selected>Indonesian</option><option value="en">English</option>';
+  configBody.appendChild(subtitleSelect);
 
-  const progress = document.createElement('div');
-  progress.className = 'progress';
-  const bar = document.createElement('div');
-  bar.id = 'bar';
-  bar.className = 'bar';
-  progress.appendChild(bar);
+  // Cookies
+  const cookieSection = document.createElement('div');
+  cookieSection.style.marginTop = '16px';
+  cookieSection.innerHTML = `
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+      <label class="field-label">Cookies</label>
+      <span style="font-size:11px;color:var(--text-muted);">Expired in 2 weeks</span>
+    </div>
+    <div class="upload-zone">Upload Your Cookies Here</div>
+  `;
+  configBody.appendChild(cookieSection);
 
-  const status = document.createElement('div');
-  status.id = 'status';
-  status.className = 'status';
+  configCard.appendChild(configBody);
+  col1.appendChild(configCard);
 
-  section.appendChild(title);
-  section.appendChild(inputRow);
+  // Bottom button col1
+  const saveConfigBtn = document.createElement('button');
+  saveConfigBtn.className = 'btn btn-lime-full';
+  saveConfigBtn.textContent = 'Save Default Configuration';
+  col1.appendChild(saveConfigBtn);
+
+  // ── Column 2: Preview ──
+  const col2 = document.createElement('div');
+  col2.style.cssText = 'display:flex;flex-direction:column;gap:16px;';
+
+  const preview = document.createElement('div');
+  preview.className = 'preview-panel';
+  preview.style.flex = '1';
+  preview.innerHTML = '<div class="preview-text">9:16</div>';
+  col2.appendChild(preview);
+
+  const startBtn = document.createElement('button');
+  startBtn.className = 'btn btn-lime-full';
+  startBtn.id = 'start';
+  startBtn.textContent = 'Create Clip';
+  col2.appendChild(startBtn);
+
+  // ── Column 3: Progress ──
+  const col3 = document.createElement('div');
+  col3.style.cssText = 'display:flex;flex-direction:column;gap:16px;';
+
+  const progressCard = document.createElement('div');
+  progressCard.className = 'card';
+  progressCard.style.cssText = 'flex:1;display:flex;flex-direction:column;';
+
+  const progressHeader = document.createElement('div');
+  progressHeader.className = 'card-header';
+  const progressCount = document.createElement('span');
+  progressCount.id = 'progress-count';
+  progressCount.style.cssText = 'font-size:20px;font-weight:700;';
+  progressCount.textContent = '0/0';
+  progressHeader.innerHTML = '<h2 class="card-title">Progress</h2>';
+  progressHeader.appendChild(progressCount);
+  progressCard.appendChild(progressHeader);
+
+  const progressBody = document.createElement('div');
+  progressBody.className = 'card-body';
+  progressBody.style.cssText = 'flex:1;display:flex;flex-direction:column;';
+
+  // Steps
+  const steps = document.createElement('div');
+  steps.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:16px;';
+
+  function makeStep(label, statusClass, statusText) {
+    const s = document.createElement('div');
+    s.className = 'step-item';
+    s.innerHTML = `<span class="step-label">${label}</span><span class="step-status ${statusClass}">${statusText}</span>`;
+    return s;
+  }
+
+  const stepDownload = makeStep('Download Clip', '', 'Waiting');
+  const stepHighlight = makeStep('Finding Highlight', '', 'Waiting');
+  const stepEditing = makeStep('Editing', '', 'Waiting');
+  const stepExport = makeStep('Export', '', 'Waiting');
+
+  steps.appendChild(stepDownload);
+  steps.appendChild(stepHighlight);
+  steps.appendChild(stepEditing);
+  steps.appendChild(stepExport);
+  progressBody.appendChild(steps);
+
+  // Terminal area
+  const termHeader = document.createElement('div');
+  termHeader.style.cssText = 'display:flex;justify-content:space-between;margin-bottom:6px;';
+  termHeader.innerHTML = `<span class="field-label">Program Running..</span><button class="btn-ghost" style="border:none;background:none;font-size:11px;color:var(--text-muted);cursor:pointer;">Copy</button>`;
+  progressBody.appendChild(termHeader);
+
+  const terminal = document.createElement('div');
+  terminal.className = 'terminal';
+  terminal.id = 'terminal';
+  terminal.style.flex = '1';
+  terminal.textContent = 'Ready...';
+  progressBody.appendChild(terminal);
+
+  // Progress bar
+  const progressTrack = document.createElement('div');
+  progressTrack.className = 'progress-track';
+  progressTrack.style.marginTop = '12px';
+  const progressFill = document.createElement('div');
+  progressFill.className = 'progress-fill';
+  progressFill.id = 'bar';
+  progressTrack.appendChild(progressFill);
+  progressBody.appendChild(progressTrack);
+
+  const statusDiv = document.createElement('div');
+  statusDiv.id = 'status';
+  statusDiv.style.cssText = 'font-size:12px;color:var(--text-muted);margin-top:8px;min-height:16px;';
+  progressBody.appendChild(statusDiv);
+
+  progressCard.appendChild(progressBody);
+  col3.appendChild(progressCard);
+
+  const openStockBtn = document.createElement('button');
+  openStockBtn.className = 'btn btn-lime-full';
+  openStockBtn.textContent = 'Open Clip Stock';
+  openStockBtn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => {
+      n.classList.toggle('active', n.dataset.view === 'stock-clip');
+    });
+    document.querySelectorAll('.view').forEach(v => {
+      v.classList.toggle('active', v.dataset.view === 'stock-clip');
+    });
+  });
+  col3.appendChild(openStockBtn);
+
+  grid.appendChild(col1);
+  grid.appendChild(col2);
+  grid.appendChild(col3);
   section.appendChild(grid);
-  section.appendChild(progress);
-  section.appendChild(status);
 
   return {
     element: section,
     fields: {
-      url,
-      start,
-      clips,
-      subtitle,
-      captions: capSwitch.querySelector('input'),
-      hook: hookSwitch.querySelector('input'),
-      bar,
-      status
+      url: urlInput,
+      start: startBtn,
+      clips: clipsSelect,
+      subtitle: subtitleSelect,
+      captions: captionsToggle.input,
+      hook: hookToggle.input,
+      bar: progressFill,
+      status: statusDiv,
+      terminal,
+      stepDownload,
+      stepHighlight,
+      stepEditing,
+      stepExport,
     }
   };
 };
-
-function makeSwitch(text, id, checked) {
-  const field = document.createElement('div');
-  field.className = 'field';
-  const label = document.createElement('label');
-  label.className = 'switch';
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  input.id = id;
-  input.checked = checked;
-  const slider = document.createElement('span');
-  slider.className = 'slider';
-  const span = document.createElement('span');
-  span.className = 'switch-label';
-  span.textContent = text;
-  label.appendChild(input);
-  label.appendChild(slider);
-  label.appendChild(span);
-  field.appendChild(label);
-  return field;
-}

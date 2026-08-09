@@ -1,0 +1,556 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Siohioma Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#a9f93b",
+                    "inverse-primary": "#b0ceb5",
+                    "primary": "#000b03",
+                    "on-error": "#ffffff",
+                    "on-tertiary": "#ffffff",
+                    "text-main": "#111827",
+                    "surface-tint": "#4a6550",
+                    "text-muted": "#6B7280",
+                    "border-subtle": "#E5E7EB",
+                    "outline": "#737972",
+                    "primary-fixed": "#ccead1",
+                    "surface-dim": "#dadad7",
+                    "tertiary-container": "#341720",
+                    "error": "#ba1a1a",
+                    "outline-variant": "#c2c8c0",
+                    "on-tertiary-fixed": "#2f131b",
+                    "primary-fixed-dim": "#b0ceb5",
+                    "surface-bright": "#faf9f6",
+                    "surface-container-lowest": "#ffffff",
+                    "on-surface": "#1a1c1a",
+                    "surface-container-highest": "#e3e2df",
+                    "status-warning": "#F59E0B",
+                    "tertiary-fixed-dim": "#eabac5",
+                    "on-tertiary-fixed-variant": "#603d46",
+                    "on-primary-fixed-variant": "#324d3a",
+                    "inverse-on-surface": "#f1f1ed",
+                    "surface": "#FFFFFF",
+                    "on-primary-fixed": "#062011",
+                    "on-secondary": "#ffffff",
+                    "tertiary-fixed": "#ffd9e1",
+                    "tertiary": "#170208",
+                    "on-background": "#1a1c1a",
+                    "surface-container-high": "#e9e8e5",
+                    "on-secondary-fixed": "#102000",
+                    "surface-variant": "#e3e2df",
+                    "on-primary-container": "#728e78",
+                    "surface-container": "#efeeea",
+                    "surface-container-low": "#f4f4f0",
+                    "status-success": "#10B981",
+                    "primary-container": "#0b2515",
+                    "on-secondary-fixed-variant": "#304f00",
+                    "on-tertiary-container": "#a77c87",
+                    "secondary-container": "#a9f93b",
+                    "status-error": "#EF4444",
+                    "error-container": "#ffdad6",
+                    "secondary": "#416900",
+                    "inverse-surface": "#2f312f",
+                    "on-secondary-container": "#457000",
+                    "secondary-fixed-dim": "#8fdb17",
+                    "on-surface-variant": "#424843",
+                    "background": "#F8F9FA",
+                    "on-primary": "#ffffff",
+                    "on-error-container": "#93000a"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "margin-page": "24px",
+                    "sidebar-width": "260px",
+                    "base": "8px",
+                    "gap-bento": "16px",
+                    "padding-card": "24px"
+            },
+            "fontFamily": {
+                    "headline-lg": [
+                            "Inter"
+                    ],
+                    "label-caps": [
+                            "Inter"
+                    ],
+                    "label-sm": [
+                            "Inter"
+                    ],
+                    "display-kpi": [
+                            "Inter"
+                    ],
+                    "headline-lg-mobile": [
+                            "Inter"
+                    ],
+                    "headline-md": [
+                            "Inter"
+                    ],
+                    "body-md": [
+                            "Inter"
+                    ]
+            },
+            "fontSize": {
+                    "headline-lg": [
+                            "24px",
+                            {
+                                    "lineHeight": "32px",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "label-caps": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "label-sm": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "display-kpi": [
+                            "32px",
+                            {
+                                    "lineHeight": "40px",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "headline-lg-mobile": [
+                            "20px",
+                            {
+                                    "lineHeight": "28px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "headline-md": [
+                            "18px",
+                            {
+                                    "lineHeight": "28px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "20px",
+                                    "fontWeight": "400"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.filled {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex">
+<!-- SideNavBar (Shared Component) -->
+<aside class="hidden md:flex flex-col bg-primary-container text-on-primary font-body-md text-body-md w-sidebar-width h-screen flex-shrink-0 border-r border-outline-variant/10 shadow-none fixed left-0 top-0 bottom-0 py-6 overflow-y-auto z-50">
+<div class="px-6 mb-8 flex items-center gap-3">
+<img alt="Siohioma Logo" class="w-8 h-8 rounded-full object-cover bg-surface" src="https://lh3.googleusercontent.com/aida/AP1WRLsvydzNSObFUvN_M-Jyey3uuSu1Jp6Q-XFCGAWD1dyG4O5rLOAaDnx9zamu6lLeA5XdqOM8emLSSBK-vPwtgT8OnwUG7Y1wu9lRpSDcsznmhZUuKNV6y_NOYkVFUQ2ER7vShYdiTpaTM-PUquFkPfIu64aAbKo9ZNMjWBaFss9sC13SN_OgjmKAqZVSHUpwzQ4p1jkMCBrzngpwFAKZoNOLWY7pbFwkwnouAj3efu2-wFDLcyngm0NfR50H">
+<div>
+<h1 class="text-headline-lg font-headline-lg font-bold text-on-primary">Clipper</h1>
+</div>
+</div>
+<div class="px-6 mb-4">
+<h2 class="font-label-caps text-label-caps text-on-primary/60 uppercase">Menu</h2>
+</div>
+<nav class="flex flex-col gap-1 px-2 mb-8">
+<a class="flex items-center gap-3 px-4 py-3 bg-secondary-fixed/10 text-secondary-fixed border-l-4 border-secondary-fixed transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined filled" data-icon="dashboard">dashboard</span>
+<span class="">Dashboard</span>
+</a>
+
+<a class="flex items-center gap-3 px-4 py-3 text-on-primary/60 hover:text-on-primary hover:bg-primary-fixed-dim/10 transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="">Upload Clip</span>
+</a>
+<a class="flex items-center justify-between px-4 py-3 text-on-primary/60 hover:text-on-primary hover:bg-primary-fixed-dim/10 transition-all duration-200 ease-in-out" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="">Create Clip</span>
+</div>
+
+</a>
+
+</nav>
+<div class="px-6 mb-4">
+<h2 class="font-label-caps text-label-caps text-on-primary/60 uppercase">General</h2>
+</div>
+<nav class="flex flex-col gap-1 px-2 mb-auto">
+<a class="flex items-center gap-3 px-4 py-3 text-on-primary/60 hover:text-on-primary hover:bg-primary-fixed-dim/10 transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-primary/60 hover:text-on-primary hover:bg-primary-fixed-dim/10 transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="shield">shield</span>
+<span class="">Credit</span>
+</a>
+</nav>
+<div class="px-6 mt-8">
+
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 md:ml-sidebar-width flex flex-col min-h-screen">
+<!-- TopNavBar (Shared Component) -->
+<header class="sticky top-0 right-0 z-40 flex items-center justify-between px-margin-page bg-surface/80 backdrop-blur-md h-16 w-full shadow-none">
+<div class="flex items-center gap-4">
+<button class="md:hidden text-on-surface-variant p-2 -ml-2 rounded-lg hover:bg-surface-container-highest/50">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<div class="flex items-center gap-2 cursor-pointer text-headline-md font-headline-md text-on-surface font-semibold">
+                    Bintang SSR</div>
+</div>
+<div class="flex-1 max-w-md mx-8 hidden md:block">
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant group-focus-within:text-primary transition-colors">search</span>
+<input class="w-full pl-10 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-full text-body-md focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all" placeholder="Search anything..." type="text">
+</div>
+</div>
+<div class="flex items-center gap-3">
+<button class="p-2 text-on-surface-variant hover:text-primary hover:bg-surface-container-highest/50 rounded-full transition-colors hidden sm:block">
+<span class="material-symbols-outlined" data-icon="account_balance_wallet">account_balance_wallet</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:text-primary hover:bg-surface-container-highest/50 rounded-full transition-colors hidden sm:block">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+
+</div>
+</header>
+<div class="p-margin-page lg:p-8 flex-1 overflow-x-hidden">
+<!-- Header Section -->
+<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+<div>
+<h1 class="text-display-kpi font-display-kpi text-on-surface mb-2 tabular-nums">Dashboard</h1>
+<p class="text-on-surface-variant text-body-md">An any way to manage sales with care and precision.</p>
+</div>
+<div class="flex items-center gap-2 px-4 py-2 bg-surface border border-outline-variant rounded-lg text-sm text-on-surface font-medium cursor-pointer hover:bg-surface-container-low transition-colors shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+Repliz Dashboard
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gap-bento">
+<!-- Main Left/Center Column (8 cols on lg) -->
+<div class="lg:col-span-8 flex flex-col gap-gap-bento">
+<!-- Top KPIs Row -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-gap-bento">
+<!-- KPI Card 1 (Update) -->
+<div class="bg-primary text-on-primary rounded-xl p-padding-card flex flex-col justify-between shadow-[0px_1px_3px_rgba(0,0,0,0.05)] border border-transparent border-border-subtle">
+<div class="flex items-center gap-2 mb-4">
+<span class="w-2 h-2 rounded-full bg-status-error"></span>
+<span class="text-sm font-medium">Account</span>
+</div>
+<div class="mb-4">
+<div class="flex items-center gap-3 text-xs text-on-primary/60 mb-2"><div class="flex items-center gap-1"><span class="material-symbols-outlined filled text-[14px]">brand_awareness</span> 12</div><div class="flex items-center gap-1"><span class="material-symbols-outlined filled text-[14px]">photo_camera</span> 12</div><div class="flex items-center gap-1"><span class="material-symbols-outlined filled text-[14px]">play_circle</span> 12</div></div>
+<p class="text-lg font-medium leading-tight">12 Campaign</p>
+</div>
+<a class="text-xs text-on-primary/60 hover:text-on-primary flex items-center gap-1 transition-colors mt-auto" href="#">Add Campaign &gt;</a>
+</div>
+<!-- KPI Card 2 (Net Income) -->
+<div class="bg-surface rounded-xl p-padding-card flex flex-col justify-between shadow-[0px_1px_3px_rgba(0,0,0,0.05)] border border-border-subtle">
+<div class="flex justify-between items-start mb-4">
+<h3 class="text-sm font-medium text-on-surface-variant">Storage</h3>
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined">more_horiz</span></button>
+</div>
+<div class="mb-4">
+<div class="flex items-baseline gap-1">
+<span class="text-lg text-on-surface-variant font-semibold">$</span>
+<span class="text-display-kpi font-display-kpi text-on-surface tabular-nums">193.000</span>
+</div>
+</div>
+</div>
+<!-- KPI Card 3 (Total Return) -->
+<div class="bg-surface rounded-xl p-padding-card flex flex-col justify-between shadow-[0px_1px_3px_rgba(0,0,0,0.05)] border border-border-subtle"><div class="flex justify-between items-start mb-4"><h3 class="text-sm font-medium text-on-surface-variant">Completed Jobs</h3></div><div class="mb-4"><div class="flex items-baseline gap-1"><span class="text-lg text-on-surface-variant font-semibold">$</span><span class="text-display-kpi font-display-kpi text-on-surface tabular-nums">123</span></div><div class="flex gap-4 mt-2"><div class="flex items-center gap-1"><span class="text-sm text-secondary">Ongoing:</span><span class="text-sm font-semibold text-secondary">12</span></div><div class="flex items-center gap-1"><span class="text-sm text-error">Failed:</span><span class="text-sm font-semibold text-error">5</span></div></div></div></div>
+</div>
+<!-- Campaign Distribution & Stock Clips Row -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-gap-bento">
+<!-- Campaign Distribution -->
+<div class="bg-surface rounded-xl p-padding-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] border border-border-subtle flex flex-col h-[400px]">
+<div class="flex justify-between items-center mb-6">
+<h2 class="text-headline-md font-headline-md text-on-surface">Campaign</h2>
+<button class="flex items-center gap-1 px-3 py-1.5 bg-surface-container-low border border-outline-variant rounded-full text-xs font-medium text-on-surface hover:bg-secondary-fixed transition-colors"><span class="material-symbols-outlined text-sm">refresh</span> Restock Clip</button>
+</div>
+<div class="overflow-y-auto pr-2 flex-1 space-y-2">
+<!-- Tree Item 1 -->
+<details class="group/details" open="">
+<summary class="list-none w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low active:border-secondary-fixed focus:border-secondary-fixed cursor-pointer transition-all outline-none group-open/details:bg-secondary-container/20">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-sm transition-transform group-open/details:rotate-90">chevron_right</span>
+<span class="font-medium text-on-surface text-sm group-open/details:text-secondary">Timothy Ronald</span>
+</div>
+<div class="flex items-center gap-3 text-xs text-on-surface-variant">
+<div class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">smart_toy</span> 3</div>
+<div class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">movie</span> 150</div>
+</div>
+</summary>
+<div class="pl-5 mt-1 space-y-1 relative before:absolute before:left-[18px] before:top-0 before:bottom-3 before:w-px before:bg-outline-variant/30">
+<button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group">
+<span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2"><span class="material-symbols-outlined filled text-[14px] mr-1.5">person</span>Cliper Account 1</span>
+<div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div>
+</button>
+<button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group">
+<span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2">Cliper Account 2</span>
+<div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div>
+</button>
+<button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group">
+<span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2">Cliper Account 3</span>
+<div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div>
+</button>
+</div>
+</details>
+<!-- Tree Item 2 -->
+<details class="group/details" open="">
+<summary class="list-none w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low active:border-secondary-fixed focus:border-secondary-fixed cursor-pointer transition-all outline-none group-open/details:bg-secondary-container/20">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-sm transition-transform group-open/details:rotate-90">chevron_right</span>
+<span class="font-medium text-on-surface text-sm group-open/details:text-secondary">Q3 Product Launch</span>
+</div>
+<div class="flex items-center gap-3 text-xs text-on-surface-variant">
+<div class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">smart_toy</span> 3</div>
+<div class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">movie</span> 150</div>
+</div>
+</summary>
+<div class="pl-5 mt-1 space-y-1 relative before:absolute before:left-[18px] before:top-0 before:bottom-3 before:w-px before:bg-outline-variant/30"><button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group"><span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2"><span class="material-symbols-outlined filled text-[14px] mr-1.5">person</span>Cliper Account 1</span><div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div></button><button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group"><span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2">Cliper Account 2</span><div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div></button><button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group"><span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2">Cliper Account 3</span><div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div></button></div>
+</details>
+<!-- Tree Item 3 -->
+<details class="group/details">
+<summary class="list-none w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low active:border-secondary-fixed focus:border-secondary-fixed cursor-pointer transition-all outline-none group-open/details:bg-secondary-container/20">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-sm transition-transform group-open/details:rotate-90">chevron_right</span>
+<span class="font-medium text-on-surface text-sm group-open/details:text-secondary">Evergreen Tech Review</span>
+</div>
+<div class="flex items-center gap-3 text-xs text-on-surface-variant">
+<div class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">smart_toy</span> 3</div>
+<div class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">movie</span> 150</div>
+</div>
+</summary>
+<div class="pl-5 mt-1 space-y-1 relative before:absolute before:left-[18px] before:top-0 before:bottom-3 before:w-px before:bg-outline-variant/30"><button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group"><span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2"><span class="material-symbols-outlined filled text-[14px] mr-1.5">person</span>Cliper Account 1</span><div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div></button><button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group"><span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2">Cliper Account 2</span><div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div></button><button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group"><span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2">Cliper Account 3</span><div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div></button></div>
+</details>
+<!-- Tree Item 4 -->
+<details class="group/details">
+<summary class="list-none w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low active:border-secondary-fixed focus:border-secondary-fixed cursor-pointer transition-all outline-none group-open/details:bg-secondary-container/20">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-sm transition-transform group-open/details:rotate-90">chevron_right</span>
+<span class="font-medium text-on-surface text-sm group-open/details:text-secondary">Holiday Special</span>
+</div>
+<div class="flex items-center gap-3 text-xs text-on-surface-variant">
+<div class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">smart_toy</span> 3</div>
+<div class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">movie</span> 150</div>
+</div>
+</summary>
+<div class="pl-5 mt-1 space-y-1 relative before:absolute before:left-[18px] before:top-0 before:bottom-3 before:w-px before:bg-outline-variant/30"><button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group"><span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2"><span class="material-symbols-outlined filled text-[14px] mr-1.5">person</span>Cliper Account 1</span><div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div></button><button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group"><span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2">Cliper Account 2</span><div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div></button><button class="w-full flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-outline-variant/50 hover:bg-surface-container-low focus:border-secondary-fixed focus:bg-surface-container-low active:scale-[0.98] transition-all text-left relative before:absolute before:left-[-14px] before:w-3.5 before:h-px before:bg-outline-variant/30 before:top-1/2 outline-none group"><span class="font-medium text-on-surface-variant group-hover:text-primary text-sm ml-2">Cliper Account 3</span><div class="flex items-center gap-1 text-xs text-on-surface-variant group-hover:text-primary"><span class="material-symbols-outlined text-[14px]">movie</span> 50</div></button></div>
+</details>
+</div>
+</div>
+<!-- Stock Clips -->
+<div class="bg-surface rounded-xl p-padding-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] border border-border-subtle flex flex-col h-[400px]">
+<div class="flex justify-between items-center mb-6"><h2 class="text-headline-md font-headline-md text-on-surface">Stock Clips</h2><div class="flex-1"></div><div class="flex items-center gap-2 text-on-surface-variant font-medium"><div class="flex items-center gap-1"><span class="">12:</span><span class="material-symbols-outlined text-lg">video_library</span></div><span class="text-sm">123mb</span></div><button class="text-on-surface-variant hover:text-primary ml-4"></button></div>
+<!-- Mock filters -->
+<div class="flex gap-2 mb-4">
+<span class="text-xs px-2 py-1 bg-surface-container rounded border border-outline-variant/50 text-on-surface-variant">Campaign: All</span>
+<span class="text-xs px-2 py-1 bg-surface-container rounded border border-outline-variant/50 text-on-surface-variant">Total Clips: 45</span>
+</div>
+<div class="flex flex-col gap-2 overflow-y-auto pr-2 pb-2">
+  <!-- File Item 1 -->
+  <div class="flex items-center justify-between p-3 rounded-lg border border-outline-variant/10 bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded bg-primary flex items-center justify-center text-secondary-fixed">
+        <span class="material-symbols-outlined">movie</span>
+      </div>
+      <div>
+        <h4 class="text-sm font-medium text-on-surface">Product&nbsp;</h4>
+        <p class="text-xs text-on-surface-variant">Campaign name</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      
+      <span class="text-xs text-on-surface-variant font-mono">3.1 MB</span>
+    </div>
+  </div>
+  <!-- File Item 2 -->
+  <div class="flex items-center justify-between p-3 rounded-lg border border-outline-variant/10 bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded bg-primary flex items-center justify-center text-secondary-fixed">
+        <span class="material-symbols-outlined">image</span>
+      </div>
+      <div>
+        <h4 class="text-sm font-medium text-on-surface">Marketing Asset 01</h4>
+        <p class="text-xs text-on-surface-variant">Campaign name</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      
+      <span class="text-xs text-on-surface-variant font-mono">1.2 MB</span>
+    </div>
+  </div>
+  <!-- File Item 3 -->
+  <div class="flex items-center justify-between p-3 rounded-lg border border-outline-variant/10 bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded bg-primary flex items-center justify-center text-secondary-fixed">
+        <span class="material-symbols-outlined">movie</span>
+      </div>
+      <div>
+        <h4 class="text-sm font-medium text-on-surface">Customer&nbsp;</h4>
+        <p class="text-xs text-on-surface-variant">Campaign name</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      
+      <span class="text-xs text-on-surface-variant font-mono">15.4 MB</span>
+    </div>
+  </div>
+  <!-- File Item 4 -->
+  <div class="flex items-center justify-between p-3 rounded-lg border border-outline-variant/10 bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded bg-primary flex items-center justify-center text-secondary-fixed">
+        <span class="material-symbols-outlined">description</span>
+      </div>
+      <div>
+        <h4 class="text-sm font-medium text-on-surface">Script Draft v2</h4>
+        <p class="text-xs text-on-surface-variant">Final approved version</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      
+      <span class="text-xs text-on-surface-variant font-mono">0.5 MB</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column (4 cols on lg) -->
+<div class="lg:col-span-4 flex flex-col gap-gap-bento">
+<!-- Proses Berjalan (Moved Transaction Section) -->
+<div class="bg-surface rounded-xl p-padding-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] border border-border-subtle flex flex-col h-full min-h-[600px]">
+<div class="flex justify-between items-center mb-6">
+<h2 class="text-headline-md font-headline-md text-on-surface">Jobs Proses</h2>
+<button class="flex items-center gap-1 px-4 py-2 bg-secondary-fixed text-on-primary-fixed rounded-full text-xs font-bold hover:bg-secondary-fixed-dim transition-colors"><span class="material-symbols-outlined text-sm">add</span> New Clip</button>
+</div>
+<div class="flex-1 overflow-y-auto space-y-5 pr-2">
+<!-- Item 1 -->
+<div class="flex items-center justify-between group">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant group-hover:bg-primary group-hover:text-secondary-fixed transition-colors">
+<span class="material-symbols-outlined text-xl">apparel</span>
+</div>
+<div>
+<h4 class="text-sm font-medium text-on-surface">Judul Video</h4>
+<p class="text-xs text-on-surface-variant">Campaign</p>
+</div>
+</div>
+<div class="text-right">
+<span class="text-sm font-medium text-status-success">100%</span>
+<p class="text-xs text-on-surface-variant font-mono mt-0.5">7 clip</p>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="flex items-center justify-between group">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant group-hover:bg-primary group-hover:text-secondary-fixed transition-colors">
+<span class="material-symbols-outlined text-xl">sports_esports</span>
+</div>
+<div>
+<h4 class="text-sm font-medium text-on-surface"></h4><h4 class="text-sm font-medium text-on-surface" style="--tw-border-spacing-y: 0; --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; --tw-pan-x: ; --tw-pan-y: ; --tw-pinch-zoom: ; --tw-scroll-snap-strictness: proximity; --tw-gradient-from-position: ; --tw-gradient-via-position: ; --tw-gradient-to-position: ; --tw-ordinal: ; --tw-slashed-zero: ; --tw-numeric-figure: ; --tw-numeric-spacing: ; --tw-numeric-fraction: ; --tw-ring-inset: ; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgb(59 130 246 / 0.5); --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000; --tw-blur: ; --tw-brightness: ; --tw-contrast: ; --tw-grayscale: ; --tw-hue-rotate: ; --tw-invert: ; --tw-saturate: ; --tw-sepia: ; --tw-drop-shadow: ; --tw-backdrop-blur: ; --tw-backdrop-brightness: ; --tw-backdrop-contrast: ; --tw-backdrop-grayscale: ; --tw-backdrop-hue-rotate: ; --tw-backdrop-invert: ; --tw-backdrop-opacity: ; --tw-backdrop-saturate: ; --tw-backdrop-sepia: ; --tw-contain-size: ; --tw-contain-layout: ; --tw-contain-paint: ; --tw-contain-style: ; --tw-text-opacity: 1; color: rgb(26, 28, 26); outline: none !important; box-shadow: none !important;">Judul Video</h4>
+<p class="text-xs text-on-surface-variant">Campaign</p>
+</div>
+</div>
+<div class="text-right">
+<span class="text-sm font-medium text-status-warning">75%</span>
+<p class="text-xs text-on-surface-variant font-mono mt-0.5">7 clip</p>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="flex items-center justify-between group">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant group-hover:bg-primary group-hover:text-secondary-fixed transition-colors">
+<span class="material-symbols-outlined text-xl">laundry</span>
+</div>
+<div>
+<h4 class="text-sm font-medium text-on-surface"></h4><h4 class="text-sm font-medium text-on-surface" style="--tw-border-spacing-y: 0; --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; --tw-pan-x: ; --tw-pan-y: ; --tw-pinch-zoom: ; --tw-scroll-snap-strictness: proximity; --tw-gradient-from-position: ; --tw-gradient-via-position: ; --tw-gradient-to-position: ; --tw-ordinal: ; --tw-slashed-zero: ; --tw-numeric-figure: ; --tw-numeric-spacing: ; --tw-numeric-fraction: ; --tw-ring-inset: ; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgb(59 130 246 / 0.5); --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000; --tw-blur: ; --tw-brightness: ; --tw-contrast: ; --tw-grayscale: ; --tw-hue-rotate: ; --tw-invert: ; --tw-saturate: ; --tw-sepia: ; --tw-drop-shadow: ; --tw-backdrop-blur: ; --tw-backdrop-brightness: ; --tw-backdrop-contrast: ; --tw-backdrop-grayscale: ; --tw-backdrop-hue-rotate: ; --tw-backdrop-invert: ; --tw-backdrop-opacity: ; --tw-backdrop-saturate: ; --tw-backdrop-sepia: ; --tw-contain-size: ; --tw-contain-layout: ; --tw-contain-paint: ; --tw-contain-style: ; --tw-text-opacity: 1; color: rgb(26, 28, 26); outline: none !important; box-shadow: none !important;">Judul Video</h4>
+<p class="text-xs text-on-surface-variant">Campaign</p>
+</div>
+</div>
+<div class="text-right">
+<span class="text-sm font-medium text-status-warning">25%</span>
+<p class="text-xs text-on-surface-variant font-mono mt-0.5">7 clip</p>
+</div>
+</div>
+<!-- Item 4 -->
+<div class="flex items-center justify-between group">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant group-hover:bg-primary group-hover:text-secondary-fixed transition-colors">
+<span class="material-symbols-outlined text-xl">smartphone</span>
+</div>
+<div>
+<h4 class="text-sm font-medium text-on-surface"></h4><h4 class="text-sm font-medium text-on-surface" style="--tw-border-spacing-y: 0; --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; --tw-pan-x: ; --tw-pan-y: ; --tw-pinch-zoom: ; --tw-scroll-snap-strictness: proximity; --tw-gradient-from-position: ; --tw-gradient-via-position: ; --tw-gradient-to-position: ; --tw-ordinal: ; --tw-slashed-zero: ; --tw-numeric-figure: ; --tw-numeric-spacing: ; --tw-numeric-fraction: ; --tw-ring-inset: ; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgb(59 130 246 / 0.5); --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000; --tw-blur: ; --tw-brightness: ; --tw-contrast: ; --tw-grayscale: ; --tw-hue-rotate: ; --tw-invert: ; --tw-saturate: ; --tw-sepia: ; --tw-drop-shadow: ; --tw-backdrop-blur: ; --tw-backdrop-brightness: ; --tw-backdrop-contrast: ; --tw-backdrop-grayscale: ; --tw-backdrop-hue-rotate: ; --tw-backdrop-invert: ; --tw-backdrop-opacity: ; --tw-backdrop-saturate: ; --tw-backdrop-sepia: ; --tw-contain-size: ; --tw-contain-layout: ; --tw-contain-paint: ; --tw-contain-style: ; --tw-text-opacity: 1; color: rgb(26, 28, 26); outline: none !important; box-shadow: none !important;">Judul Video</h4>
+<p class="text-xs text-on-surface-variant">Campaign</p>
+</div>
+</div>
+<div class="text-right">
+<span class="text-sm font-medium text-status-success"><span style="color: rgb(245, 158, 11);" class="">20%</span></span>
+<p class="text-xs text-on-surface-variant font-mono mt-0.5">7 clip</p>
+</div>
+</div>
+<!-- Item 5 -->
+<div class="flex items-center justify-between group">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant group-hover:bg-primary group-hover:text-secondary-fixed transition-colors">
+<span class="material-symbols-outlined text-xl">coffee</span>
+</div>
+<div>
+<h4 class="text-sm font-medium text-on-surface"></h4><h4 class="text-sm font-medium text-on-surface" style="--tw-border-spacing-y: 0; --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; --tw-pan-x: ; --tw-pan-y: ; --tw-pinch-zoom: ; --tw-scroll-snap-strictness: proximity; --tw-gradient-from-position: ; --tw-gradient-via-position: ; --tw-gradient-to-position: ; --tw-ordinal: ; --tw-slashed-zero: ; --tw-numeric-figure: ; --tw-numeric-spacing: ; --tw-numeric-fraction: ; --tw-ring-inset: ; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgb(59 130 246 / 0.5); --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000; --tw-blur: ; --tw-brightness: ; --tw-contrast: ; --tw-grayscale: ; --tw-hue-rotate: ; --tw-invert: ; --tw-saturate: ; --tw-sepia: ; --tw-drop-shadow: ; --tw-backdrop-blur: ; --tw-backdrop-brightness: ; --tw-backdrop-contrast: ; --tw-backdrop-grayscale: ; --tw-backdrop-hue-rotate: ; --tw-backdrop-invert: ; --tw-backdrop-opacity: ; --tw-backdrop-saturate: ; --tw-backdrop-sepia: ; --tw-contain-size: ; --tw-contain-layout: ; --tw-contain-paint: ; --tw-contain-style: ; --tw-text-opacity: 1; color: rgb(26, 28, 26); outline: none !important; box-shadow: none !important;">Judul Video</h4>
+<p class="text-xs text-on-surface-variant">Campaign</p>
+</div>
+</div>
+<div class="text-right">
+<span class="text-sm font-medium text-status-success"><span style="color: rgb(245, 158, 11);" class="">10%</span></span>
+<p class="text-xs text-on-surface-variant font-mono mt-0.5">7 clip</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+
+
+
+
+
+
+
+
+
+
+
+
+</body></html>

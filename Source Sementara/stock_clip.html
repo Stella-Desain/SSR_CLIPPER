@@ -1,0 +1,389 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Stock Clip - Clipper</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            clipper: {
+              sidebar: '#142a1d',
+              active: '#96ef38',
+              bg: '#f8fafc',
+              border: '#e2e8f0',
+              textPrimary: '#1e293b',
+              textSecondary: '#64748b'
+            }
+          }
+        }
+      }
+    }
+  </script>
+<style data-purpose="custom-utilities">
+    /* Custom scrollbar for better appearance */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body class="bg-clipper-bg text-clipper-textPrimary font-sans antialiased h-screen overflow-hidden flex">
+<!-- BEGIN: Sidebar -->
+<aside class="w-64 bg-clipper-sidebar text-white flex flex-col flex-shrink-0 h-full relative z-20">
+<!-- Logo -->
+<div class="h-20 flex items-center px-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-white rounded-full flex items-center justify-center text-clipper-sidebar font-bold text-xs">
+<svg class="text-clipper-active" fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"></path><path d="M8.5 14.5 12 11l-2-2-3.5 3.5"></path></svg>
+</div>
+<span class="text-xl font-bold tracking-tight">Clipper</span>
+</div>
+</div>
+<!-- Navigation -->
+<div class="flex-1 py-6 overflow-y-auto custom-scrollbar">
+<!-- Menu Section -->
+<div class="px-6 mb-2">
+<p class="text-xs font-semibold text-gray-400 tracking-wider mb-3">MENU</p>
+</div>
+<nav class="space-y-1 mb-8">
+<a class="flex items-center gap-3 px-6 py-2.5 text-gray-300 hover:text-white hover:bg-white/5 transition-colors" href="#">
+<svg fill="none" height="18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="18" xmlns="http://www.w3.org/2000/svg"><rect height="9" rx="1" width="7" x="3" y="3"></rect><rect height="5" rx="1" width="7" x="14" y="3"></rect><rect height="9" rx="1" width="7" x="14" y="12"></rect><rect height="5" rx="1" width="7" x="3" y="16"></rect></svg>
+<span class="text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2.5 text-gray-300 hover:text-white hover:bg-white/5 transition-colors" href="#">
+<svg fill="none" height="18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="18" xmlns="http://www.w3.org/2000/svg"><rect height="18" rx="2" width="18" x="3" y="3"></rect><path d="M15 3v18"></path><path d="M3 15h12"></path><path d="m9 9 3 3-3 3"></path></svg>
+<span class="text-sm font-medium">Create Clip</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2.5 bg-white/10 text-clipper-active relative border-l-4 border-clipper-active" href="#">
+<svg fill="none" height="18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="18" xmlns="http://www.w3.org/2000/svg"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+<span class="text-sm font-medium">Stock Clip</span>
+</a>
+</nav>
+<!-- General Section -->
+<div class="px-6 mb-2">
+<p class="text-xs font-semibold text-gray-400 tracking-wider mb-3">GENERAL</p>
+</div>
+<nav class="space-y-1">
+<a class="flex items-center gap-3 px-6 py-2.5 text-gray-300 hover:text-white hover:bg-white/5 transition-colors" href="#">
+<svg fill="none" height="18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="18" xmlns="http://www.w3.org/2000/svg"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+<span class="text-sm font-medium">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2.5 text-gray-300 hover:text-white hover:bg-white/5 transition-colors" href="#">
+<svg fill="none" height="18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="18" xmlns="http://www.w3.org/2000/svg"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+<span class="text-sm font-medium">Credit</span>
+</a>
+</nav>
+</div>
+</aside>
+<!-- END: Sidebar -->
+<!-- BEGIN: Main Content -->
+<main class="flex-1 flex flex-col h-full overflow-hidden">
+<!-- BEGIN: Top Header -->
+<header class="h-20 bg-white border-b border-clipper-border flex items-center justify-between px-8 flex-shrink-0">
+<div class="flex items-center gap-4 w-full">
+<h1 class="text-lg font-semibold w-48">Bintang SSR</h1>
+<div class="flex-1 max-w-2xl">
+<div class="relative">
+<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+<svg class="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+<path clip-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" fill-rule="evenodd"></path>
+</svg>
+</div>
+<input class="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-full leading-5 bg-gray-50 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-clipper-active focus:ring-1 focus:ring-clipper-active sm:text-sm transition-colors" placeholder="Search anything..." type="text">
+</div>
+</div>
+</div>
+<div class="flex items-center gap-5 ml-4">
+<button class="text-gray-500 hover:text-gray-700">
+<svg fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"></path><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"></path><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"></path></svg>
+</button>
+<button class="text-gray-500 hover:text-gray-700 relative">
+<svg fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+<span class="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"></span>
+</button>
+</div>
+</header>
+<!-- END: Top Header -->
+<!-- BEGIN: Page Content -->
+<div class="flex-1 overflow-auto p-8 custom-scrollbar">
+<!-- Page Title -->
+<div class="mb-8">
+<h2 class="text-3xl font-bold text-gray-900 mb-2">Stock Clip</h2>
+<p class="text-gray-500 text-sm">An any way to manage sales with care and precision.</p>
+</div>
+<!-- Layout Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start h-[calc(100%-100px)]">
+<!-- BEGIN: Jobs Panel (Left) -->
+<div class="lg:col-span-4 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col h-full max-h-[700px]">
+<div class="p-5 border-b border-gray-50">
+<h3 class="text-xl font-bold text-gray-800">Jobs</h3>
+</div>
+<div class="p-5 flex-1 flex flex-col overflow-hidden">
+<!-- Filter Bar -->
+<div class="flex items-center justify-between mb-4">
+<div class="relative w-3/5">
+<select class="block w-full pl-3 pr-10 py-1.5 text-sm border-gray-200 bg-gray-50 rounded-md focus:outline-none focus:ring-clipper-active focus:border-clipper-active">
+<option>Campaign: All</option>
+</select>
+</div>
+<span class="text-sm text-gray-500 font-medium">Clips: 45</span>
+</div>
+<!-- Jobs List -->
+<div class="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-2 pb-4">
+<!-- Job Item -->
+<div class="bg-gray-50 rounded-lg p-3 flex justify-between items-start border border-gray-100/50 hover:bg-gray-100 transition-colors group">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-1">Keluar Dari Mindset Budak</h4>
+<p class="text-xs text-gray-500">Timothy Ronald - 24 apr</p>
+</div>
+<div class="flex flex-col items-end gap-1">
+<div class="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+<button class="text-gray-500 hover:text-gray-700"><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+<button class="text-red-400 hover:text-red-600"><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line></svg></button>
+</div>
+<span class="text-[11px] text-gray-400 font-medium">3.1mb</span>
+</div>
+</div>
+<!-- Job Item (Repeated for visual fill) -->
+<div class="bg-gray-50 rounded-lg p-3 flex justify-between items-start border border-gray-100/50 hover:bg-gray-100 transition-colors group">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-1">Keluar Dari Mindset Budak</h4>
+<p class="text-xs text-gray-500">Timothy Ronald - 24 apr</p>
+</div>
+<div class="flex flex-col items-end gap-1">
+<div class="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+<button class="text-gray-500 hover:text-gray-700"><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+<button class="text-red-400 hover:text-red-600"><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line></svg></button>
+</div>
+<span class="text-[11px] text-gray-400 font-medium">3.1mb</span>
+</div>
+</div>
+<!-- Job Item (Repeated) -->
+<div class="bg-gray-50 rounded-lg p-3 flex justify-between items-start border border-gray-100/50 hover:bg-gray-100 transition-colors group">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-1">Keluar Dari Mindset Budak</h4>
+<p class="text-xs text-gray-500">Timothy Ronald - 24 apr</p>
+</div>
+<div class="flex flex-col items-end gap-1">
+<div class="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+<button class="text-gray-500 hover:text-gray-700"><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+<button class="text-red-400 hover:text-red-600"><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line></svg></button>
+</div>
+<span class="text-[11px] text-gray-400 font-medium">3.1mb</span>
+</div>
+</div>
+<!-- Job Item (Repeated) -->
+<div class="bg-gray-50 rounded-lg p-3 flex justify-between items-start border border-gray-100/50 hover:bg-gray-100 transition-colors group">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-1">Keluar Dari Mindset Budak</h4>
+<p class="text-xs text-gray-500">Timothy Ronald - 24 apr</p>
+</div>
+<div class="flex flex-col items-end gap-1">
+<div class="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+<button class="text-gray-500 hover:text-gray-700"><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+<button class="text-red-400 hover:text-red-600"><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line></svg></button>
+</div>
+<span class="text-[11px] text-gray-400 font-medium">3.1mb</span>
+</div>
+</div>
+<!-- Job Item (Repeated) -->
+<div class="bg-gray-50 rounded-lg p-3 flex justify-between items-start border border-gray-100/50 hover:bg-gray-100 transition-colors group">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-1">Keluar Dari Mindset Budak</h4>
+<p class="text-xs text-gray-500">Timothy Ronald - 24 apr</p>
+</div>
+<div class="flex flex-col items-end gap-1">
+<div class="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+<button class="text-gray-500 hover:text-gray-700"><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+<button class="text-red-400 hover:text-red-600"><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line></svg></button>
+</div>
+<span class="text-[11px] text-gray-400 font-medium">3.1mb</span>
+</div>
+</div>
+<!-- Faded Item to show scroll -->
+<div class="bg-gray-50/70 rounded-lg p-3 flex justify-between items-start border border-gray-100/30">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-1 opacity-70">Keluar Dari Mindset Budak</h4>
+</div>
+<div class="flex flex-col items-end gap-1">
+<div class="flex items-center gap-1.5 opacity-30">
+<button><svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+</div>
+</div>
+</div>
+</div>
+<!-- Create Button -->
+<div class="mt-4 pt-4 border-t border-gray-50">
+<button class="w-full bg-clipper-active hover:bg-[#86d92f] text-clipper-sidebar font-semibold py-2.5 rounded-lg transition-colors">
+                Create Clip New
+              </button>
+</div>
+</div>
+</div>
+<!-- END: Jobs Panel (Left) -->
+<!-- BEGIN: Clips Panel (Right) -->
+<div class="lg:col-span-8 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col h-full max-h-[700px]">
+<!-- Clips Header -->
+<div class="p-6 pb-4 border-b border-gray-50 flex items-center justify-between">
+<h3 class="text-xl font-bold text-gray-800">Clips</h3>
+<button class="px-4 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full border border-gray-200 transition-colors">
+              Upload Semua
+            </button>
+</div>
+<!-- Clips Subheader/Meta -->
+<div class="px-6 py-3 bg-white flex justify-between items-center border-b border-gray-50 text-sm">
+<span class="text-gray-500 font-medium">Keluar Dari Mindset Budak - Timothy Ronald</span>
+<div class="flex items-center gap-4 text-gray-500">
+<span>Clips: 45</span>
+<span>Size: 45mb</span>
+</div>
+</div>
+<!-- Clips List -->
+<div class="flex-1 overflow-y-auto p-6 pt-4 space-y-3 custom-scrollbar">
+<!-- Clip Row -->
+<div class="bg-gray-50 rounded-lg p-3 flex items-center justify-between border border-gray-100/50 hover:bg-gray-100 transition-colors">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-0.5">Keluar Dari Mindset Budak</h4>
+<p class="text-[11px] text-gray-500 font-mono">Durasi: 24s - 3.1mb</p>
+</div>
+<div class="flex items-center gap-3">
+<button class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 bg-gray-200 rounded transition-colors">
+<svg fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+</button>
+<button class="px-4 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50 transition-colors">
+                  Play
+                </button>
+<button class="px-4 py-1.5 text-sm font-semibold text-clipper-sidebar bg-clipper-active rounded-md shadow-sm hover:bg-[#86d92f] transition-colors">
+                  Upload
+                </button>
+</div>
+</div>
+<!-- Clip Row (Repeated) -->
+<div class="bg-gray-50 rounded-lg p-3 flex items-center justify-between border border-gray-100/50 hover:bg-gray-100 transition-colors">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-0.5">Keluar Dari Mindset Budak</h4>
+<p class="text-[11px] text-gray-500 font-mono">Durasi: 24s - 3.1mb</p>
+</div>
+<div class="flex items-center gap-3">
+<button class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 bg-gray-200 rounded transition-colors">
+<svg fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+</button>
+<button class="px-4 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50 transition-colors">
+                  Play
+                </button>
+<button class="px-4 py-1.5 text-sm font-semibold text-clipper-sidebar bg-clipper-active rounded-md shadow-sm hover:bg-[#86d92f] transition-colors">
+                  Upload
+                </button>
+</div>
+</div>
+<!-- Clip Row (Repeated) -->
+<div class="bg-gray-50 rounded-lg p-3 flex items-center justify-between border border-gray-100/50 hover:bg-gray-100 transition-colors">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-0.5">Keluar Dari Mindset Budak</h4>
+<p class="text-[11px] text-gray-500 font-mono">Durasi: 24s - 3.1mb</p>
+</div>
+<div class="flex items-center gap-3">
+<button class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 bg-gray-200 rounded transition-colors">
+<svg fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+</button>
+<button class="px-4 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50 transition-colors">
+                  Play
+                </button>
+<button class="px-4 py-1.5 text-sm font-semibold text-clipper-sidebar bg-clipper-active rounded-md shadow-sm hover:bg-[#86d92f] transition-colors">
+                  Upload
+                </button>
+</div>
+</div>
+<!-- Clip Row (Repeated) -->
+<div class="bg-gray-50 rounded-lg p-3 flex items-center justify-between border border-gray-100/50 hover:bg-gray-100 transition-colors">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-0.5">Keluar Dari Mindset Budak</h4>
+<p class="text-[11px] text-gray-500 font-mono">Durasi: 24s - 3.1mb</p>
+</div>
+<div class="flex items-center gap-3">
+<button class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 bg-gray-200 rounded transition-colors">
+<svg fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+</button>
+<button class="px-4 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50 transition-colors">
+                  Play
+                </button>
+<button class="px-4 py-1.5 text-sm font-semibold text-clipper-sidebar bg-clipper-active rounded-md shadow-sm hover:bg-[#86d92f] transition-colors">
+                  Upload
+                </button>
+</div>
+</div>
+<!-- Clip Row (Repeated) -->
+<div class="bg-gray-50 rounded-lg p-3 flex items-center justify-between border border-gray-100/50 hover:bg-gray-100 transition-colors">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-0.5">Keluar Dari Mindset Budak</h4>
+<p class="text-[11px] text-gray-500 font-mono">Durasi: 24s - 3.1mb</p>
+</div>
+<div class="flex items-center gap-3">
+<button class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 bg-gray-200 rounded transition-colors">
+<svg fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+</button>
+<button class="px-4 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50 transition-colors">
+                  Play
+                </button>
+<button class="px-4 py-1.5 text-sm font-semibold text-clipper-sidebar bg-clipper-active rounded-md shadow-sm hover:bg-[#86d92f] transition-colors">
+                  Upload
+                </button>
+</div>
+</div>
+<!-- Clip Row (Repeated) -->
+<div class="bg-gray-50 rounded-lg p-3 flex items-center justify-between border border-gray-100/50 hover:bg-gray-100 transition-colors">
+<div>
+<h4 class="font-semibold text-sm text-gray-800 mb-0.5">Keluar Dari Mindset Budak</h4>
+<p class="text-[11px] text-gray-500 font-mono">Durasi: 24s - 3.1mb</p>
+</div>
+<div class="flex items-center gap-3">
+<button class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 bg-gray-200 rounded transition-colors">
+<svg fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+</button>
+<button class="px-4 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50 transition-colors">
+                  Play
+                </button>
+<button class="px-4 py-1.5 text-sm font-semibold text-clipper-sidebar bg-clipper-active rounded-md shadow-sm hover:bg-[#86d92f] transition-colors">
+                  Upload
+                </button>
+</div>
+</div>
+<!-- Faded Clip Row to show scroll -->
+<div class="bg-gray-50/70 rounded-lg p-3 flex items-center justify-between border border-gray-100/30">
+<div class="opacity-70">
+<h4 class="font-semibold text-sm text-gray-800 mb-0.5">Keluar Dari Mindset Budak</h4>
+<p class="text-[11px] text-gray-500 font-mono">Durasi: 24s - 3.1mb</p>
+</div>
+<div class="flex items-center gap-3 opacity-70">
+<button class="w-8 h-8 flex items-center justify-center text-gray-400 bg-gray-200/50 rounded">
+<svg fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+</button>
+<button class="px-4 py-1.5 text-sm font-medium text-gray-700 bg-white/50 border border-gray-200/50 rounded-md">
+                  Play
+                </button>
+<button class="px-4 py-1.5 text-sm font-semibold text-clipper-sidebar bg-clipper-active/80 rounded-md">
+                  Upload
+                </button>
+</div>
+</div>
+</div>
+</div>
+<!-- END: Clips Panel (Right) -->
+</div>
+</div>
+<!-- END: Page Content -->
+</main>
+<!-- END: Main Content -->
+</body></html>

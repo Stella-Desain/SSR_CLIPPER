@@ -1,28 +1,60 @@
+/* ═══════════════════════════════════════
+   Clipper - App Shell
+   ═══════════════════════════════════════ */
+
 const root = document.getElementById('app');
 const shell = document.createElement('div');
 shell.className = 'shell';
 root.appendChild(shell);
 
-const header = window.Components.Header();
-shell.appendChild(header.element);
+// ── Build Shell: Sidebar + Main ──
+const shellComp = window.Components.Shell();
+shell.appendChild(shellComp.sidebar);
 
-const main = document.createElement('main');
-main.className = 'main';
-shell.appendChild(main);
+const mainWrapper = document.createElement('div');
+mainWrapper.className = 'main-wrapper';
+mainWrapper.appendChild(shellComp.topHeader);
 
-const aiView = window.Components.AiSettingsView();
+const pageContent = document.createElement('div');
+pageContent.className = 'page-content';
+mainWrapper.appendChild(pageContent);
+shell.appendChild(mainWrapper);
+
+// ── Build Views ──
+const dashboardView = window.Components.DashboardView();
 const homeView = window.Components.HomeView();
-main.appendChild(aiView.element);
-main.appendChild(homeView.element);
+const stockClipView = window.Components.StockClipView();
+const aiView = window.Components.AiSettingsView();
 
-const navButtons = header.buttons;
-const views = [aiView.element, homeView.element];
+pageContent.appendChild(dashboardView.element);
+pageContent.appendChild(homeView.element);
+pageContent.appendChild(stockClipView.element);
+pageContent.appendChild(aiView.element);
 
+const allViews = [dashboardView.element, homeView.element, stockClipView.element, aiView.element];
+const navItems = shellComp.navItems;
+
+// ── State ──
 let polling = null;
-let iconTriedData = false;
-const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none"><rect width="96" height="96" rx="18" fill="#0B1B24"/><path d="M18 36h60v36a6 6 0 0 1-6 6H24a6 6 0 0 1-6-6V36Z" fill="#12BFE4"/><path d="M20 20l10 10m6-10 10 10m6-10 10 10m6-10 10 10" stroke="#12BFE4" stroke-width="6" stroke-linecap="round"/></svg>`;
 let providerType = 'ytclip';
 
+// ── Navigation ──
+function setActiveView(name) {
+  allViews.forEach(v => v.classList.toggle('active', v.dataset.view === name));
+  navItems.forEach(n => n.classList.toggle('active', n.dataset.view === name));
+  // Scroll to top
+  pageContent.scrollTop = 0;
+}
+
+navItems.forEach(item => {
+  item.addEventListener('click', () => {
+    const view = item.dataset.view;
+    if (view === 'credit') return; // Not implemented yet
+    setActiveView(view);
+  });
+});
+
+// ── API Helpers ──
 function waitForApi() {
   return new Promise((resolve) => {
     if (window.pywebview && window.pywebview.api) {
@@ -43,40 +75,22 @@ function waitForApi() {
   });
 }
 
-function toFileUrl(path) {
-  if (!path) return '';
-  if (path.startsWith('file://')) return path;
-  const fixed = path.replace(/\\/g, '/');
-  return 'file:///' + fixed;
-}
-
-function lockControls(state) {
-  homeView.fields.url.disabled = state;
-  homeView.fields.clips.disabled = state;
-  homeView.fields.subtitle.disabled = state;
-  homeView.fields.captions.disabled = state;
-  homeView.fields.hook.disabled = state;
-  homeView.fields.start.disabled = state;
-}
-
-function setActiveView(name) {
-  views.forEach((view) => {
-    view.classList.toggle('active', view.dataset.view === name);
-  });
-  navButtons.forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.view === name);
-  });
-}
-
+// ── Provider Management ──
 function setProviderType(type, applyBaseUrl) {
   providerType = type;
-  aiView.fields.providerButtons.forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.provider === type);
+  aiView.fields.providerButtons.forEach(btn => {
+    const isActive = btn.dataset.provider === type;
+    btn.style.background = isActive ? 'var(--lime)' : 'var(--card)';
+    btn.style.color = isActive ? 'var(--text-on-lime)' : 'var(--text)';
+    btn.style.borderColor = isActive ? 'var(--lime)' : 'var(--border)';
+    btn.style.fontWeight = isActive ? '700' : '500';
   });
+
   const showCustom = type === 'custom';
-  aiView.fields.hfUrlField.classList.toggle('hidden', !showCustom);
-  aiView.fields.cmUrlField.classList.toggle('hidden', !showCustom);
-  aiView.fields.hmUrlField.classList.toggle('hidden', !showCustom);
+  document.querySelectorAll('.url-field').forEach(el => {
+    el.classList.toggle('hidden', !showCustom);
+  });
+
   if (applyBaseUrl && !showCustom) {
     const baseUrl = type === 'ytclip' ? 'https://ai-api.ytclip.org/v1' : 'https://api.openai.com/v1';
     aiView.fields.hfUrl.value = baseUrl;
@@ -94,7 +108,7 @@ function setSelectOptions(select, models, preferred) {
     select.appendChild(opt);
     return;
   }
-  models.forEach((m) => {
+  models.forEach(m => {
     const opt = document.createElement('option');
     opt.value = m;
     opt.textContent = m;
@@ -105,40 +119,61 @@ function setSelectOptions(select, models, preferred) {
   }
 }
 
-function toggleEye(input, button) {
-  const visible = input.type === 'text';
-  input.type = visible ? 'password' : 'text';
-  button.textContent = visible ? '👁' : '🙈';
+// ── Processing Controls ──
+function lockControls(state) {
+  homeView.fields.url.disabled = state;
+  homeView.fields.clips.disabled = state;
+  homeView.fields.subtitle.disabled = state;
+  homeView.fields.captions.disabled = state;
+  homeView.fields.hook.disabled = state;
+  homeView.fields.start.disabled = state;
+  if (state) {
+    homeView.fields.start.style.opacity = '0.5';
+    homeView.fields.start.style.cursor = 'not-allowed';
+  } else {
+    homeView.fields.start.style.opacity = '1';
+    homeView.fields.start.style.cursor = 'pointer';
+  }
 }
 
-function getSvgDataUrl() {
-  return 'data:image/svg+xml;utf8,' + encodeURIComponent(fallbackSvg);
-}
+function updateStepStatus(status) {
+  const statusLower = (status || '').toLowerCase();
 
-async function setIconFromApi() {
-  if (iconTriedData) return;
-  iconTriedData = true;
-  try {
-    const icon = await window.pywebview.api.get_icon_data();
-    if (icon && icon.data) {
-      header.icon.src = icon.data;
+  function setStep(el, cls, text) {
+    const span = el.querySelector('.step-status');
+    if (span) {
+      span.className = 'step-status ' + cls;
+      span.textContent = text;
     }
-  } catch {}
-}
+  }
 
-function setIconFallback() {
-  header.icon.onerror = () => {
-    setIconFromApi();
-  };
-  header.icon.src = getSvgDataUrl();
+  if (statusLower.includes('download')) {
+    setStep(homeView.fields.stepDownload, 'ongoing', 'Ongoing');
+  } else if (statusLower.includes('highlight') || statusLower.includes('finding')) {
+    setStep(homeView.fields.stepDownload, 'complete', 'Complete');
+    setStep(homeView.fields.stepHighlight, 'ongoing', 'Ongoing');
+  } else if (statusLower.includes('edit') || statusLower.includes('process') || statusLower.includes('portrait') || statusLower.includes('caption') || statusLower.includes('hook')) {
+    setStep(homeView.fields.stepDownload, 'complete', 'Complete');
+    setStep(homeView.fields.stepHighlight, 'complete', 'Complete');
+    setStep(homeView.fields.stepEditing, 'ongoing', 'Ongoing');
+  } else if (statusLower.includes('export') || statusLower.includes('saving') || statusLower.includes('complete')) {
+    setStep(homeView.fields.stepDownload, 'complete', 'Complete');
+    setStep(homeView.fields.stepHighlight, 'complete', 'Complete');
+    setStep(homeView.fields.stepEditing, 'complete', 'Complete');
+    setStep(homeView.fields.stepExport, statusLower === 'complete' ? 'complete' : 'ongoing', statusLower === 'complete' ? 'Complete' : 'Ongoing');
+  } else if (statusLower.startsWith('error')) {
+    setStep(homeView.fields.stepExport, 'failed', 'Failed');
+  }
 }
 
 async function start() {
   const url = homeView.fields.url.value.trim();
   if (!url) return;
   lockControls(true);
-  homeView.fields.status.textContent = 'Starting';
+  homeView.fields.status.textContent = 'Starting...';
+  homeView.fields.terminal.textContent = 'Starting clip creation...\n';
   homeView.fields.bar.style.width = '0%';
+
   try {
     const res = await window.pywebview.api.start_processing(
       url,
@@ -151,11 +186,11 @@ async function start() {
       poll();
       polling = setInterval(poll, 500);
     } else {
-      homeView.fields.status.textContent = 'Busy';
+      homeView.fields.status.textContent = 'Busy - another process is running';
       lockControls(false);
     }
   } catch (e) {
-    homeView.fields.status.textContent = 'Error';
+    homeView.fields.status.textContent = 'Error: ' + e;
     lockControls(false);
   }
 }
@@ -166,6 +201,11 @@ async function poll() {
     const pr = Math.max(0, Math.min(1, p.progress || 0));
     homeView.fields.bar.style.width = (pr * 100).toFixed(1) + '%';
     homeView.fields.status.textContent = p.status || '';
+    homeView.fields.terminal.textContent += (p.status || '') + '\n';
+    homeView.fields.terminal.scrollTop = homeView.fields.terminal.scrollHeight;
+
+    updateStepStatus(p.status);
+
     if (p.status && (p.status.startsWith('error') || p.status === 'complete')) {
       clearInterval(polling);
       polling = null;
@@ -180,10 +220,7 @@ async function poll() {
 
 homeView.fields.start.addEventListener('click', start);
 
-navButtons.forEach((btn) => {
-  btn.addEventListener('click', () => setActiveView(btn.dataset.view));
-});
-
+// ── Save AI Settings ──
 aiView.fields.saveBtn.addEventListener('click', async () => {
   const payload = {
     _provider_type: providerType,
@@ -203,72 +240,38 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
       model: aiView.fields.hmModel.value.trim()
     }
   };
-  aiView.fields.status.textContent = 'Saving';
+  aiView.fields.status.textContent = 'Saving...';
   try {
     const res = await window.pywebview.api.save_ai_settings(payload);
-    aiView.fields.status.textContent = res && res.status === 'saved' ? 'Saved' : 'Error';
+    aiView.fields.status.textContent = res && res.status === 'saved' ? '✓ Saved successfully' : 'Error saving';
   } catch {
-    aiView.fields.status.textContent = 'Error';
+    aiView.fields.status.textContent = 'Error saving settings';
   }
 });
 
-async function init() {
-  await waitForApi();
-  setIconFallback();
-  await setIconFromApi();
-  if (!header.icon.src) {
-    try {
-      const paths = await window.pywebview.api.get_asset_paths();
-      if (paths && paths.icon) {
-        header.icon.src = toFileUrl(paths.icon);
-      }
-    } catch {}
-  }
-  try {
-    const ai = await window.pywebview.api.get_ai_settings();
-    const hf = ai.highlight_finder || {};
-    const cm = ai.caption_maker || {};
-    const hm = ai.hook_maker || {};
-    aiView.fields.hfUrl.value = hf.base_url || '';
-    aiView.fields.hfKey.value = hf.api_key || '';
-    setSelectOptions(aiView.fields.hfModel, [hf.model].filter(Boolean), hf.model || '');
-    aiView.fields.cmUrl.value = cm.base_url || '';
-    aiView.fields.cmKey.value = cm.api_key || '';
-    setSelectOptions(aiView.fields.cmModel, [cm.model].filter(Boolean), cm.model || '');
-    aiView.fields.hmUrl.value = hm.base_url || '';
-    aiView.fields.hmKey.value = hm.api_key || '';
-    setSelectOptions(aiView.fields.hmModel, [hm.model].filter(Boolean), hm.model || '');
-  } catch {}
-  try {
-    const provider = await window.pywebview.api.get_provider_type();
-    providerType = provider.provider_type || 'ytclip';
-  } catch {}
-  setProviderType(providerType, true);
-  setActiveView('home');
-}
-
-aiView.fields.providerButtons.forEach((btn) => {
+// ── Provider Button Listeners ──
+aiView.fields.providerButtons.forEach(btn => {
   btn.addEventListener('click', () => setProviderType(btn.dataset.provider, true));
 });
 
-aiView.fields.hfEye.addEventListener('click', () => toggleEye(aiView.fields.hfKey, aiView.fields.hfEye));
-aiView.fields.cmEye.addEventListener('click', () => toggleEye(aiView.fields.cmKey, aiView.fields.cmEye));
-aiView.fields.hmEye.addEventListener('click', () => toggleEye(aiView.fields.hmKey, aiView.fields.hmEye));
-
+// ── Validate & Load Models ──
 async function validateAndLoad(kind) {
   const baseUrl = kind.url.value.trim();
   const apiKey = kind.key.value.trim();
-  kind.status.textContent = 'Validating';
+  kind.status.textContent = 'Validating...';
   const res = await window.pywebview.api.validate_api_key(baseUrl, apiKey);
   if (!res || res.status !== 'ok') {
     kind.status.textContent = res && res.message ? res.message : 'Invalid';
+    kind.status.style.color = 'var(--error)';
     return;
   }
-  kind.status.textContent = 'Loading models';
+  kind.status.textContent = 'Loading models...';
+  kind.status.style.color = 'var(--text-muted)';
   const modelsRes = await window.pywebview.api.get_models(baseUrl, apiKey);
   const models = (modelsRes && modelsRes.models) || [];
   setSelectOptions(kind.model, models, kind.model.value);
-  kind.status.textContent = models.length ? 'Valid' : 'Valid, no models';
+  kind.status.textContent = models.length ? '✓ Valid' : '✓ Valid, no models';
+  kind.status.style.color = 'var(--success)';
 }
 
 aiView.fields.hfValidateBtn.addEventListener('click', () => validateAndLoad({
@@ -291,6 +294,37 @@ aiView.fields.hmValidateBtn.addEventListener('click', () => validateAndLoad({
   model: aiView.fields.hmModel,
   status: aiView.fields.hmValidateStatus
 }));
+
+// ── Init ──
+async function init() {
+  await waitForApi();
+
+  // Load AI settings
+  try {
+    const ai = await window.pywebview.api.get_ai_settings();
+    const hf = ai.highlight_finder || {};
+    const cm = ai.caption_maker || {};
+    const hm = ai.hook_maker || {};
+    aiView.fields.hfUrl.value = hf.base_url || '';
+    aiView.fields.hfKey.value = hf.api_key || '';
+    setSelectOptions(aiView.fields.hfModel, [hf.model].filter(Boolean), hf.model || '');
+    aiView.fields.cmUrl.value = cm.base_url || '';
+    aiView.fields.cmKey.value = cm.api_key || '';
+    setSelectOptions(aiView.fields.cmModel, [cm.model].filter(Boolean), cm.model || '');
+    aiView.fields.hmUrl.value = hm.base_url || '';
+    aiView.fields.hmKey.value = hm.api_key || '';
+    setSelectOptions(aiView.fields.hmModel, [hm.model].filter(Boolean), hm.model || '');
+  } catch {}
+
+  // Load provider type
+  try {
+    const provider = await window.pywebview.api.get_provider_type();
+    providerType = provider.provider_type || 'ytclip';
+  } catch {}
+
+  setProviderType(providerType, true);
+  setActiveView('dashboard');
+}
 
 window.addEventListener('pywebviewready', init);
 setTimeout(() => init(), 800);
