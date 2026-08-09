@@ -42,30 +42,8 @@ window.Components.StockClipView = function () {
   const jobsList = document.createElement('div');
   jobsList.style.cssText = 'flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:8px;padding-bottom:8px;';
 
-  const sampleJobs = [
-    { title: 'Keluar Dari Mindset Budak', sub: 'Timothy Ronald - 24 apr', size: '3.1mb' },
-    { title: 'Keluar Dari Mindset Budak', sub: 'Timothy Ronald - 24 apr', size: '3.1mb' },
-    { title: 'Keluar Dari Mindset Budak', sub: 'Timothy Ronald - 24 apr', size: '3.1mb' },
-    { title: 'Keluar Dari Mindset Budak', sub: 'Timothy Ronald - 24 apr', size: '3.1mb' },
-    { title: 'Keluar Dari Mindset Budak', sub: 'Timothy Ronald - 24 apr', size: '3.1mb' },
-  ];
-
-  sampleJobs.forEach(j => {
-    const item = window.FileItem.v2({
-      title: j.title,
-      info1: j.sub,
-      info2: '', // Or remove the hyphen logic in component if empty
-      size: j.size,
-      onEdit: () => console.log('Edit clicked'),
-      onDelete: () => console.log('Delete clicked')
-    });
-    // Fix info2 display since we only have 'sub'
-    const subEl = item.querySelector('.fi-sub');
-    if(subEl) {
-       subEl.innerHTML = `<span>${j.sub}</span>`;
-    }
-    jobsList.appendChild(item);
-  });
+  // File list will be populated in refresh()
+  const sampleJobs = [];
 
   jobsBody.appendChild(jobsList);
 
@@ -119,23 +97,69 @@ window.Components.StockClipView = function () {
   const clipsBody = document.createElement('div');
   clipsBody.style.cssText = 'flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px;';
 
-  for (let i = 0; i < 7; i++) {
-    const clip = window.FileItem.v3({
-      title: 'Keluar Dari Mindset Budak',
-      info1: 'Durasi: 24s',
-      info2: '3.1mb',
-      onDelete: () => console.log('Delete clicked'),
-      onPlay: () => console.log('Play clicked'),
-      onUpload: () => console.log('Upload clicked')
-    });
-    clipsBody.appendChild(clip);
-  }
+  // File list will be populated in refresh()
 
   clipsPanel.appendChild(clipsBody);
 
   layout.appendChild(jobsPanel);
   layout.appendChild(clipsPanel);
   section.appendChild(layout);
+  
+  async function refresh() {
+    if (!window.pywebview || !window.pywebview.api) return;
+    try {
+      const stats = await window.pywebview.api.get_dashboard_stats();
+      
+      // Update Jobs panel
+      jobsList.innerHTML = '';
+      const allJobs = [];
+      if (stats.activeJobs && stats.activeJobs.length > 0) allJobs.push(...stats.activeJobs);
+      if (stats.recentJobs && stats.recentJobs.length > 0) allJobs.push(...stats.recentJobs.reverse());
+      
+      if (allJobs.length === 0) {
+        jobsList.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-size:13px;">No jobs found.</div>';
+      } else {
+        allJobs.forEach(j => {
+          const item = window.FileItem.v2({
+            title: j.title || 'Unknown Job',
+            info1: j.status,
+            info2: '',
+            size: '',
+            onEdit: () => window.pywebview.api.open_output_folder(),
+            onDelete: () => {}
+          });
+          const subEl = item.querySelector('.fi-sub');
+          if(subEl) {
+             subEl.innerHTML = `<span>${j.status}</span>`;
+          }
+          jobsList.appendChild(item);
+        });
+      }
+      
+      // Update Clips panel
+      const clips = await window.pywebview.api.get_stock_clips();
+      clipsBody.innerHTML = '';
+      
+      if (clips.length === 0) {
+        clipsBody.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-size:13px;">No clips found.</div>';
+      } else {
+        clips.forEach(c => {
+          const clip = window.FileItem.v3({
+            title: c.title,
+            info1: 'Durasi: ' + c.duration,
+            info2: new Date(c.date).toLocaleDateString(),
+            onDelete: () => {},
+            onPlay: () => window.pywebview.api.open_output_folder(),
+            onUpload: () => {}
+          });
+          clipsBody.appendChild(clip);
+        });
+      }
+      
+    } catch(e) {
+      console.error("Failed to load stock clips", e);
+    }
+  }
 
-  return { element: section };
+  return { element: section, refresh };
 };

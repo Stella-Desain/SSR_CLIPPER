@@ -26,11 +26,15 @@ window.Components.AiSettingsView = function () {
   const providerRow = document.createElement('div');
   providerRow.style.cssText = 'display:flex;gap:8px;align-items:center;';
 
-  const largeV3Btn = document.createElement('button');
-  largeV3Btn.className = 'btn btn-outline';
-  largeV3Btn.style.cssText = 'border-color:var(--border-light);color:var(--text);';
-  largeV3Btn.innerHTML = 'Large V3 Turbo <span style="font-size:10px;margin-left:4px;">&gt;</span>';
-  providerRow.appendChild(largeV3Btn);
+  const whisperModelSelect = document.createElement('select');
+  whisperModelSelect.className = 'select';
+  whisperModelSelect.style.cssText = 'border-color:var(--border-light);color:var(--text);height:40px;padding:0 32px 0 16px;font-weight:600;font-size:14px;background-color:#FFFFFF;cursor:pointer;';
+  whisperModelSelect.innerHTML = `
+    <option value="api">API</option>
+    <option value="large-v3-turbo" selected>large-v3-turbo - 1.5gb</option>
+    <option value="medium">Medium - 1.4gb</option>
+  `;
+  providerRow.appendChild(whisperModelSelect);
 
   const installBtn = document.createElement('button');
   installBtn.className = 'btn btn-lime';

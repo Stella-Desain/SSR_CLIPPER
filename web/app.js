@@ -44,6 +44,10 @@ function setActiveView(name) {
   navItems.forEach(n => n.classList.toggle('active', n.dataset.view === name));
   // Scroll to top
   pageContent.scrollTop = 0;
+  
+  // Refresh data if view has a refresh method
+  if (name === 'dashboard' && dashboardView.refresh) dashboardView.refresh();
+  if (name === 'stock-clip' && stockClipView.refresh) stockClipView.refresh();
 }
 
 navItems.forEach(item => {

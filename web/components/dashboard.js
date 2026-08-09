@@ -99,22 +99,10 @@ window.Components.DashboardView = function () {
   kpi2.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;">
       <div style="width:8px;height:8px;border-radius:50%;background:#8DC63F;flex-shrink:0;"></div>
-      <span style="font-size:14px;font-weight:500;color:#374151;">Jobs</span>
+      <span style="font-size:14px;font-weight:500;color:#374151;">Clips Created</span>
     </div>
     <div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-        <!-- 12 + Plus icon -->
-        <span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:#6B7280;">
-          12
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </span>
-        <!-- 12 + Trash icon -->
-        <span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:#6B7280;">
-          12
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
-        </span>
-      </div>
-      <div style="font-size:22px;font-weight:700;color:#111827;letter-spacing:-0.02em;line-height:1.1;">123 Clips</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;letter-spacing:-0.02em;line-height:1.1;" id="dash-clips-count">0 Clips</div>
     </div>
   `;
   kpiRow.appendChild(kpi2);
@@ -140,16 +128,16 @@ window.Components.DashboardView = function () {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;">
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#374151;">
-        <div style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;"></div>yt-dlp
+        <div id="status-ytdlp" style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;"></div>yt-dlp
       </div>
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#374151;">
-        <div style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;"></div>ffmpeg
+        <div id="status-ffmpeg" style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;"></div>ffmpeg
       </div>
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#374151;">
-        <div style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;"></div>deno
+        <div id="status-deno" style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;"></div>deno
       </div>
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#374151;">
-        <div style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;"></div>whisper
+        <div id="status-whisper" style="width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0;"></div>whisper
       </div>
     </div>
   `;
@@ -297,7 +285,7 @@ window.Components.DashboardView = function () {
   stockHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:25px 25px 0 25px;';
   stockHead.innerHTML = `
     <h2 style="font-size:18px;font-weight:700;color:#111827;line-height:1.2;">Stock Clips</h2>
-    <span style="font-size:13px;font-weight:400;color:#6B7280;">Size all: 450mb</span>
+    <span style="font-size:13px;font-weight:400;color:#6B7280;" id="dash-storage-used">Size all: 0 GB</span>
   `;
   stockCard.appendChild(stockHead);
 
@@ -306,24 +294,13 @@ window.Components.DashboardView = function () {
   stockFilter.style.cssText = 'display:flex;align-items:center;padding:12px 25px 0 25px;gap:8px;';
   stockFilter.innerHTML = `
     <div style="flex:1;height:26px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:6px;padding:0 9px;display:flex;align-items:center;font-size:13px;color:#374151;">Campaign: All</div>
-    <div style="height:26px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:6px;padding:0 8px;display:flex;align-items:center;font-size:13px;color:#374151;white-space:nowrap;">Clips: 45</div>
+    <div style="height:26px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:6px;padding:0 8px;display:flex;align-items:center;font-size:13px;color:#374151;white-space:nowrap;" id="dash-filter-clips">Clips: 0</div>
   `;
   stockCard.appendChild(stockFilter);
 
   // File list (Figma 2:239)
   const stockList = document.createElement('div');
   stockList.style.cssText = 'padding:8px 0 4px 0;overflow-y:auto;max-height:320px;';
-
-  for (let i = 0; i < 8; i++) {
-    const fileItem = window.FileItem.v1({
-      title: 'Keluar Dari Mindset Budak',
-      info1: 'Durasi: 24s',
-      info2: '3.1mb',
-      onEdit: () => console.log('Edit clicked')
-    });
-    stockList.appendChild(fileItem);
-  }
-
   stockCard.appendChild(stockList);
   bottomRow.appendChild(stockCard);
 
@@ -356,40 +333,92 @@ window.Components.DashboardView = function () {
   // Jobs list (Figma 2:298 — starts at y:79)
   const jobsList = document.createElement('div');
   jobsList.style.cssText = 'padding:8px 0 4px 0;overflow-y:auto;max-height:520px;';
-
-  const jobsData = [
-    { status: 'Export...',    isFailed: false },
-    { status: 'Editing...',   isFailed: false },
-    { status: 'Highlight...', isFailed: false },
-    { status: 'Download...',  isFailed: false },
-    { status: 'Failed',       isFailed: true },
-    { status: 'Failed',       isFailed: true },
-    { status: 'Failed',       isFailed: true },
-    { status: 'Failed',       isFailed: true },
-    { status: 'Failed',       isFailed: true },
-  ];
-
-  jobsData.forEach(j => {
-    const statusText = j.isFailed ? 'Failed' : j.status;
-    const fileItem = window.FileItem.v1({
-      title: 'Keluar Dari Mindset Budak',
-      info1: '12/12 Clips',
-      info2: statusText,
-      onEdit: () => console.log('Edit clicked')
-    });
-    // Optional: override the info2 color if failed to red to match the design intent
-    if (j.isFailed) {
-      const sub = fileItem.querySelector('.fi-sub');
-      if (sub && sub.lastElementChild) {
-        sub.lastElementChild.style.color = '#EF4444';
-      }
-    }
-    jobsList.appendChild(fileItem);
-  });
-
   rightCol.appendChild(jobsList);
   bentoRoot.appendChild(rightCol);
 
   section.appendChild(bentoRoot);
-  return { element: section };
+  
+  // Data Refresh function
+  async function refresh() {
+    if (!window.pywebview || !window.pywebview.api) return;
+    try {
+      const stats = await window.pywebview.api.get_dashboard_stats();
+      
+      const clipsCountEl = section.querySelector('#dash-clips-count');
+      if (clipsCountEl) clipsCountEl.textContent = stats.totalVideosClipped + ' Clips';
+      
+      const storageEl = section.querySelector('#dash-storage-used');
+      if (storageEl) storageEl.textContent = 'Size all: ' + stats.storageUsed;
+      
+      const filterClipsEl = section.querySelector('#dash-filter-clips');
+      if (filterClipsEl) filterClipsEl.textContent = 'Clips: ' + stats.totalVideosClipped;
+
+      // Dependencies
+      const deps = await window.pywebview.api.check_dependencies();
+      const sY = section.querySelector('#status-ytdlp');
+      if(sY) sY.style.background = deps.ffmpeg ? '#8DC63F' : '#EF4444'; // Use ffmpeg true for yt-dlp placeholder too
+      const sF = section.querySelector('#status-ffmpeg');
+      if(sF) sF.style.background = deps.ffmpeg ? '#8DC63F' : '#EF4444';
+      const sD = section.querySelector('#status-deno');
+      if(sD) sD.style.background = deps.deno ? '#8DC63F' : '#EF4444';
+      const sW = section.querySelector('#status-whisper');
+      if(sW) sW.style.background = deps.whisper ? '#8DC63F' : '#EF4444';
+
+      // Load Stock Clips
+      const clips = await window.pywebview.api.get_stock_clips();
+      stockList.innerHTML = '';
+      if (clips.length === 0) {
+        stockList.innerHTML = '<div style="padding:16px 25px;color:#6B7280;font-size:13px;">No stock clips found. Generate some first!</div>';
+      } else {
+        // Show up to 10 latest clips on dashboard
+        clips.slice(0, 10).forEach(c => {
+          const fileItem = window.FileItem.v1({
+            title: c.title,
+            info1: 'Durasi: ' + c.duration,
+            info2: new Date(c.date).toLocaleDateString(),
+            onEdit: () => {
+              window.pywebview.api.open_output_folder();
+            }
+          });
+          stockList.appendChild(fileItem);
+        });
+      }
+      
+      // Load Jobs History
+      jobsList.innerHTML = '';
+      const allJobs = [];
+      if (stats.activeJobs && stats.activeJobs.length > 0) {
+        allJobs.push(...stats.activeJobs);
+      }
+      if (stats.recentJobs && stats.recentJobs.length > 0) {
+        allJobs.push(...stats.recentJobs.reverse());
+      }
+      
+      if (allJobs.length === 0) {
+        jobsList.innerHTML = '<div style="padding:16px 25px;color:#6B7280;font-size:13px;">No active or recent jobs.</div>';
+      } else {
+        allJobs.slice(0, 10).forEach(j => {
+          const isFailed = j.status.toLowerCase().includes('fail') || j.status.toLowerCase().includes('error');
+          const fileItem = window.FileItem.v1({
+            title: j.title || 'Unknown Job',
+            info1: j.clips ? (j.clips + ' Clips') : '',
+            info2: isFailed ? 'Failed' : j.status,
+            onEdit: () => {}
+          });
+          if (isFailed) {
+            const sub = fileItem.querySelector('.fi-sub');
+            if (sub && sub.lastElementChild) {
+              sub.lastElementChild.style.color = '#EF4444';
+            }
+          }
+          jobsList.appendChild(fileItem);
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load dashboard stats', e);
+    }
+  }
+
+  return { element: section, refresh };
 };
+
