@@ -63,12 +63,12 @@ window.Components.DashboardView = function () {
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
         <!-- 12 + TikTok -->
         <span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.65);">
-          12
+          <span id="dash-tiktok-count">12</span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.65)"><path d="M12.53.02C13.84 0 15.14.01 16.44 0c.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.12-3.44-3.17-3.8-5.46-.4-2.51.13-5.23 1.82-7.08 1.49-1.7 3.8-2.61 6.09-2.11l.01 4.26c-1.15-.22-2.42-.16-3.42.49-1.25.76-1.88 2.37-1.47 3.79.43 1.54 2.1 2.53 3.69 2.18 1.13-.24 2.01-1.19 2.22-2.34.09-.54.12-1.09.12-1.64 0-4.93-.01-9.86.01-14.79Z"/></svg>
         </span>
         <!-- 12 + YouTube -->
         <span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.65);">
-          12
+          <span id="dash-youtube-count">12</span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.65)"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34l-.01-8.92a8.16 8.16 0 004.76 1.52V4.46a4.85 4.85 0 01-1-.23z"/></svg>
         </span>
         <!-- 12 + Instagram -->
@@ -78,7 +78,7 @@ window.Components.DashboardView = function () {
         </span>
       </div>
       <!-- Big label (Figma 2:54) -->
-      <div style="font-size:22px;font-weight:700;color:#FFFFFF;letter-spacing:-0.02em;line-height:1.1;">12 Campaign</div>
+      <div style="font-size:22px;font-weight:700;color:#FFFFFF;letter-spacing:-0.02em;line-height:1.1;" id="dash-campaigns-count">12 Campaign</div>
     </div>
   `;
   kpiRow.appendChild(kpi1);
@@ -258,15 +258,8 @@ window.Components.DashboardView = function () {
     return item;
   }
 
-  treeContainer.appendChild(makeTreeItem('Timothy Ronald', true));
-
-  // gap between tree items
-  const treeSpacer = document.createElement('div');
-  treeSpacer.style.height = '8px';
-  treeContainer.appendChild(treeSpacer);
-
-  treeContainer.appendChild(makeTreeItem('Q3 Product Launch', true));
-
+  // Initial clear (will be populated dynamically in refresh)
+  treeContainer.innerHTML = '';
   campaignCard.appendChild(treeContainer);
   bottomRow.appendChild(campaignCard);
 
@@ -364,6 +357,97 @@ window.Components.DashboardView = function () {
       const sW = section.querySelector('#status-whisper');
       if(sW) sW.style.background = deps.whisper ? '#8DC63F' : '#EF4444';
 
+      // Load Account Stats
+      const accStats = await window.pywebview.api.get_account_stats();
+      if (accStats) {
+        const campCountEl = section.querySelector('#dash-campaigns-count');
+        if (campCountEl) campCountEl.textContent = accStats.campaigns + ' Campaign';
+        
+        const tikCountEl = section.querySelector('#dash-tiktok-count');
+        if (tikCountEl) tikCountEl.textContent = accStats.tiktok_count;
+        
+        const ytCountEl = section.querySelector('#dash-youtube-count');
+        if (ytCountEl) ytCountEl.textContent = accStats.youtube_count;
+      }
+
+      // Load Campaigns Tree
+      const campaigns = await window.pywebview.api.get_campaigns();
+      if (campaigns) {
+        treeContainer.innerHTML = ''; // Clear previous
+        campaigns.forEach((camp, idx) => {
+          // Custom build for dynamic tree item based on makeTreeItem logic
+          const item = document.createElement('div');
+          item.style.cssText = 'margin-bottom:0;';
+          let isOpen = true; // default open
+          
+          const summary = document.createElement('div');
+          const getSummaryStyle = (open) => \`display:flex;justify-content:space-between;align-items:center;padding:9px 10px 9px 6px;border-radius:6px;background:\${open ? '#F2FCE2' : 'transparent'};cursor:pointer;transition:background 150ms ease;\`;
+          summary.style.cssText = getSummaryStyle(isOpen);
+          
+          const updateSummaryHtml = (open) => {
+            summary.innerHTML = \`
+              <div style="display:flex;align-items:center;gap:6px;">
+                <svg style="width:7px;height:7px;color:\${open ? '#2E4D0F' : '#6B7280'};transform:\${open ? 'rotate(0deg)' : 'rotate(-90deg)'};transition:transform 150ms;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                <span style="font-size:13px;font-weight:600;color:\${open ? '#2E4D0F' : '#374151'};">\${camp.name}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;">
+                <span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:\${open ? '#2E4D0F' : '#6B7280'};">
+                  \${camp.counts.split('/')[0]}
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zm-11-2l6-5-6-5v10z"/></svg>
+                </span>
+                <span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:\${open ? '#2E4D0F' : '#6B7280'};">
+                  \${camp.counts.split('/')[1] || 0}
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+                </span>
+              </div>
+            \`;
+          };
+          updateSummaryHtml(isOpen);
+          item.appendChild(summary);
+
+          const childrenSlot = document.createElement('div');
+          childrenSlot.style.cssText = \`position:relative;padding-left:20px;display:\${isOpen ? 'block' : 'none'};\`;
+          
+          if (camp.children && camp.children.length > 0) {
+            const vline = document.createElement('div');
+            vline.style.cssText = 'position:absolute;left:18px;top:0;bottom:10px;width:1px;background:#E5E7EB;';
+            childrenSlot.appendChild(vline);
+            
+            camp.children.forEach((childName, cIdx) => {
+              const childRow = document.createElement('div');
+              childRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:9px 0 9px 20px;cursor:pointer;transition:background 150ms ease;border-radius:4px;';
+              childRow.innerHTML = \`
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="width:12px;height:12px;border-radius:50%;background:#111827;flex-shrink:0;"></div>
+                  <span style="font-size:13px;font-weight:400;color:#374151;">\${childName}</span>
+                </div>
+              \`;
+              const hconn = document.createElement('div');
+              hconn.style.cssText = 'position:absolute;left:18px;top:'+(19 + cIdx*38)+'px;width:14px;height:1px;background:#E5E7EB;';
+              childrenSlot.appendChild(hconn);
+              childrenSlot.appendChild(childRow);
+            });
+          }
+          item.appendChild(childrenSlot);
+          
+          // Toggle logic
+          summary.addEventListener('click', () => {
+            isOpen = !isOpen;
+            summary.style.cssText = getSummaryStyle(isOpen);
+            updateSummaryHtml(isOpen);
+            childrenSlot.style.display = isOpen ? 'block' : 'none';
+          });
+          
+          treeContainer.appendChild(item);
+          
+          if (idx < campaigns.length - 1) {
+            const spacer = document.createElement('div');
+            spacer.style.height = '8px';
+            treeContainer.appendChild(spacer);
+          }
+        });
+      }
+
       // Load Stock Clips
       const clips = await window.pywebview.api.get_stock_clips();
       stockList.innerHTML = '';
@@ -403,7 +487,13 @@ window.Components.DashboardView = function () {
             title: j.title || 'Unknown Job',
             info1: j.clips ? (j.clips + ' Clips') : '',
             info2: isFailed ? 'Failed' : j.status,
-            onEdit: () => {}
+            onEdit: () => {
+              if (isFailed) {
+                alert('Job failed: ' + j.status);
+              } else {
+                window.pywebview.api.open_output_folder();
+              }
+            }
           });
           if (isFailed) {
             const sub = fileItem.querySelector('.fi-sub');
@@ -417,6 +507,21 @@ window.Components.DashboardView = function () {
     } catch (e) {
       console.error('Failed to load dashboard stats', e);
     }
+  }
+
+  // Wire Repliz Button
+  const replizBtn = section.querySelector('#btn-repliz-dashboard');
+  if (replizBtn) {
+    replizBtn.addEventListener('click', async () => {
+      if (window.pywebview && window.pywebview.api) {
+        try {
+          const url = await window.pywebview.api.get_repliz_dashboard_url();
+          window.open(url, '_blank');
+        } catch (e) {
+          console.error('Error opening repliz dashboard', e);
+        }
+      }
+    });
   }
 
   return { element: section, refresh };

@@ -249,6 +249,59 @@ window.Components.HomeView = function () {
   grid.appendChild(col3);
   section.appendChild(grid);
 
+  function showToast(msg, isError = false) {
+    const toast = document.createElement('div');
+    toast.textContent = msg;
+    toast.style.cssText = `
+      position: fixed; bottom: 20px; right: 20px; 
+      background: ${isError ? '#ef4444' : '#10b981'}; 
+      color: white; padding: 12px 24px; border-radius: 8px; 
+      font-size: 14px; font-weight: 500; z-index: 9999;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      transition: opacity 0.3s;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 2800);
+  }
+
+  setTimeout(() => {
+    const cookiesBtn = section.querySelector('#cookies-btn');
+    if (cookiesBtn) {
+      cookiesBtn.addEventListener('click', async () => {
+        try {
+          const res = await window.pywebview.api.upload_cookies();
+          if (res.status === 'ok') {
+            showToast('Cookies uploaded successfully!');
+          } else if (res.status === 'error') {
+            showToast('Error: ' + res.message, true);
+          }
+        } catch (err) {
+          showToast('Failed to upload cookies', true);
+        }
+      });
+    }
+  }, 0);
+
+  saveConfigBtn.addEventListener('click', async () => {
+    const settings = {
+      num_clips: parseInt(clipsSelect.value, 10),
+      add_captions: captionsToggle.input.checked,
+      add_hook: hookToggle.input.checked,
+      portrait: portraitToggle.input.checked
+    };
+    try {
+      const res = await window.pywebview.api.save_default_config(settings);
+      if (res && res.status === 'saved') {
+        showToast('Default configuration saved!');
+      } else {
+        showToast('Failed to save config', true);
+      }
+    } catch (err) {
+      showToast('Error saving config', true);
+    }
+  });
+
   return {
     element: section,
     fields: {
@@ -258,6 +311,7 @@ window.Components.HomeView = function () {
       subtitle: subtitleSelect,
       captions: captionsToggle.input,
       hook: hookToggle.input,
+      portrait: portraitToggle.input,
       bar: progressFill,
       status: statusDiv,
       terminal,

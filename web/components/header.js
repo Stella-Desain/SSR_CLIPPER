@@ -31,7 +31,7 @@ window.Components.Shell = function () {
 
   const generalItems = [
     { id: 'settings', icon: 'settings', label: 'Settings' },
-    { id: 'credit', icon: 'credit', label: 'Credit' },
+    // Credit page removed for this release
   ];
 
   function svgIcon(type) {

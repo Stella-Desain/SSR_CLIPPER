@@ -148,9 +148,17 @@ window.Components.StockClipView = function () {
             title: c.title,
             info1: 'Durasi: ' + c.duration,
             info2: new Date(c.date).toLocaleDateString(),
-            onDelete: () => {},
-            onPlay: () => window.pywebview.api.open_output_folder(),
-            onUpload: () => {}
+            onDelete: async () => {
+              if (!confirm('Delete this clip?')) return;
+              const res = await window.pywebview.api.delete_clip(c.path);
+              if (res && res.status === 'ok') refresh();
+            },
+            onPlay: async () => {
+              await window.pywebview.api.play_clip(c.path);
+            },
+            onUpload: () => {
+              window.pywebview.api.open_output_folder();
+            }
           });
           clipsBody.appendChild(clip);
         });

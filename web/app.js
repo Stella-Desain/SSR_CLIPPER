@@ -184,7 +184,8 @@ async function start() {
       parseInt(homeView.fields.clips.value, 10),
       homeView.fields.captions.checked,
       homeView.fields.hook.checked,
-      homeView.fields.subtitle.value
+      homeView.fields.subtitle.value,
+      homeView.fields.portrait.checked
     );
     if (res && res.status === 'started') {
       poll();
@@ -223,6 +224,36 @@ async function poll() {
 }
 
 homeView.fields.start.addEventListener('click', start);
+
+// ── Terminal Copy Button ──
+const copyTermBtn = homeView.element.querySelector('.btn-ghost');
+if (copyTermBtn) {
+  copyTermBtn.addEventListener('click', () => {
+    const text = homeView.fields.terminal.textContent || '';
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = copyTermBtn.textContent;
+      copyTermBtn.textContent = 'Copied!';
+      setTimeout(() => { copyTermBtn.textContent = orig; }, 1500);
+    }).catch(() => {});
+  });
+}
+
+// ── Install All Button ──
+const installBtn = aiView.element.querySelector('.btn-lime');
+if (installBtn) {
+  installBtn.addEventListener('click', async () => {
+    installBtn.disabled = true;
+    installBtn.textContent = 'Installing...';
+    try {
+      await window.pywebview.api.install_dependencies();
+      installBtn.textContent = 'Installing (bg)';
+      setTimeout(() => { installBtn.disabled = false; installBtn.textContent = 'Install All'; }, 5000);
+    } catch {
+      installBtn.textContent = 'Error';
+      installBtn.disabled = false;
+    }
+  });
+}
 
 // ── Save AI Settings ──
 aiView.fields.saveBtn.addEventListener('click', async () => {
@@ -330,5 +361,24 @@ async function init() {
   setActiveView('dashboard');
 }
 
+// ── Load Dependency Status ──
+async function loadDepStatus() {
+  try {
+    const deps = await window.pywebview.api.check_dependencies();
+    const dots = aiView.element.querySelectorAll('.dep-dot');
+    const labels = ['ytdlp', 'ffmpeg', 'deno', 'whisper'];
+    const vals = [deps.cookies !== undefined ? deps.ffmpeg : false, deps.ffmpeg, deps.deno, deps.whisper];
+    // Map: yt-dlp, ffmpeg, deno, whisper
+    const depMap = [deps.ffmpeg, deps.ffmpeg, deps.deno, deps.whisper];
+    dots.forEach((dot, i) => {
+      const ok = depMap[i];
+      dot.classList.toggle('err', !ok);
+      dot.classList.toggle('ok', !!ok);
+    });
+  } catch {}
+}
+
 window.addEventListener('pywebviewready', init);
+window.addEventListener('pywebviewready', loadDepStatus);
 setTimeout(() => init(), 800);
+setTimeout(() => loadDepStatus(), 1200);

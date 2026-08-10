@@ -106,7 +106,7 @@ class WebAPI:
         cfg_mgr.save()
         return {"status": "saved"}
 
-    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id"):
+    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False):
         if self.thread and self.thread.is_alive():
             return {"status": "busy"}
         
@@ -120,13 +120,13 @@ class WebAPI:
             
         self.thread = threading.Thread(
             target=self._run,
-            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang),
+            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang, bool(portrait)),
             daemon=True,
         )
         self.thread.start()
         return {"status": "started"}
 
-    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang):
+    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang, portrait):
         def log_cb(msg):
             self.status = str(msg)
             if self.current_job:
@@ -199,6 +199,36 @@ class WebAPI:
 
     # --- NEW ENDPOINTS FOR WEB UI ---
 
+    def get_repliz_dashboard_url(self):
+        """Returns the URL for Repliz Dashboard."""
+        return "https://dashboard.repliz.com" # Mock URL
+
+    def get_account_stats(self):
+        """Returns statistics for the connected accounts."""
+        # This should theoretically come from the Repliz/TikTok/YouTube integration
+        # Returning mock data for now based on the requested structure
+        return {
+            "campaigns": 12,
+            "tiktok_count": 2,
+            "youtube_count": 3
+        }
+
+    def get_campaigns(self):
+        """Returns a list of campaigns and their connected accounts."""
+        # Mock data representing a dynamic campaign tree
+        return [
+            {
+                "name": "Stella's Fashion",
+                "counts": "3/150",
+                "children": ["TikTok: @stella_fashion", "YT: Stella Shorts"]
+            },
+            {
+                "name": "Tech Reviews",
+                "counts": "12/50",
+                "children": ["TikTok: @tech_stella"]
+            }
+        ]
+
     def get_dashboard_stats(self):
         """Returns statistics for the Dashboard."""
         out_dir = Path(self.output_dir)
@@ -226,6 +256,35 @@ class WebAPI:
             "recentJobs": self.job_history[-5:] # Last 5 jobs
         }
         
+    def upload_cookies(self):
+        """Opens a file dialog to select cookies.txt and saves it."""
+        try:
+            result = webview.windows[0].create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=False,
+                file_types=('Text Files (*.txt)',)
+            )
+            if result and len(result) > 0:
+                source_path = result[0]
+                target_path = get_app_dir() / "cookies.txt"
+                import shutil
+                shutil.copy2(source_path, target_path)
+                return {"status": "ok", "path": str(target_path)}
+            return {"status": "cancelled"}
+        except Exception as e:
+            print(f"Error uploading cookies: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def save_default_config(self, settings):
+        """Saves default configuration from the Create Clip form."""
+        if not isinstance(settings, dict):
+            return {"status": "error"}
+        cfg_mgr = self._get_cfg_manager()
+        # You could store these under a specific key like 'default_clip_settings'
+        cfg_mgr.config["default_clip_settings"] = settings
+        cfg_mgr.save()
+        return {"status": "saved"}
+
     def get_stock_clips(self):
         """Returns a list of generated clips from the output directory."""
         clips = []
@@ -306,6 +365,51 @@ class WebAPI:
             "deno": True, # Assume true for now, can implement real check
             "whisper": True
         }
+
+    def delete_clip(self, clip_path):
+        """Delete a specific clip file and its parent folder if empty."""
+        try:
+            p = Path(clip_path)
+            if p.exists() and p.is_file():
+                parent = p.parent
+                p.unlink()
+                # Also remove the data.json if only that remains
+                remaining = list(parent.iterdir())
+                if not remaining or all(f.name == "data.json" for f in remaining):
+                    import shutil
+                    shutil.rmtree(str(parent), ignore_errors=True)
+                return {"status": "ok"}
+            return {"status": "not_found"}
+        except Exception as e:
+            print(f"Error deleting clip: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def play_clip(self, clip_path):
+        """Open a clip file in the system default video player."""
+        try:
+            p = str(Path(clip_path).absolute())
+            if sys.platform == "win32":
+                os.startfile(p)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", p])
+            else:
+                subprocess.Popen(["xdg-open", p])
+            return {"status": "ok"}
+        except Exception as e:
+            print(f"Error playing clip: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def install_dependencies(self):
+        """Trigger dependency installation in background."""
+        try:
+            from utils.dependency_manager import DependencyManager
+            dm = DependencyManager()
+            t = threading.Thread(target=dm.install_all, daemon=True)
+            t.start()
+            return {"status": "started"}
+        except Exception as e:
+            print(f"Error starting install: {e}")
+            return {"status": "error", "message": str(e)}
 
     # --- END NEW ENDPOINTS ---
 

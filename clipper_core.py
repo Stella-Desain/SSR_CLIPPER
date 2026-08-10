@@ -602,7 +602,7 @@ KONTEN
 Transcript:
 {transcript}"""
     
-    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True):
+    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True):
         """Main processing pipeline"""
         
         # Step 1: Download video
@@ -638,7 +638,7 @@ Transcript:
         for i, highlight in enumerate(highlights, 1):
             if self.is_cancelled():
                 return
-            self.process_clip(video_path, highlight, i, total_clips, add_captions=add_captions, add_hook=add_hook)
+            self.process_clip(video_path, highlight, i, total_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait)
         
         # Cleanup
         self.set_progress("Cleaning up...", 0.95)
@@ -2674,7 +2674,7 @@ Transcript:
         
         return valid[:num_clips]
     
-    def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False):
+    def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False, portrait: bool = True):
         """Process a single clip: cut, portrait, hook (optional), captions (optional)
         
         Args:
@@ -2785,17 +2785,22 @@ Transcript:
         current_step += 1
         
         # Step 2: Convert to portrait with progress
-        if self.is_cancelled():
-            return
-        clip_progress("Converting to portrait...", current_step, 0)
-        portrait_file = clip_dir / "temp_portrait.mp4"
-        self.convert_to_portrait_with_progress(str(landscape_file), str(portrait_file), 
-            lambda p: clip_progress("Converting to portrait...", current_step, p))
-        self.log("  ✓ Portrait conversion")
-        current_step += 1
-        
-        # Track which file is the current output
-        current_output = portrait_file
+        if portrait:
+            if self.is_cancelled():
+                return
+            clip_progress("Converting to portrait...", current_step, 0)
+            portrait_file = clip_dir / "temp_portrait.mp4"
+            self.convert_to_portrait_with_progress(str(landscape_file), str(portrait_file), 
+                lambda p: clip_progress("Converting to portrait...", current_step, p))
+            self.log("  ✓ Portrait conversion")
+            current_step += 1
+            
+            # Track which file is the current output
+            current_output = portrait_file
+        else:
+            self.log("  ⊘ Skipped portrait conversion")
+            current_output = landscape_file
+            
         hook_duration = 0
         
         # Step 3: Add hook (optional)
@@ -2825,8 +2830,9 @@ Transcript:
                 return
             clip_progress("Adding captions...", current_step, 0)
             
-            # Use portrait_file (without hook) as audio source for transcription
-            audio_source = str(portrait_file) if add_hook else None
+            # Use portrait_file or landscape_file (without hook) as audio source for transcription
+            base_audio_file = portrait_file if portrait else landscape_file
+            audio_source = str(base_audio_file) if add_hook else None
             
             # If watermark enabled, add captions to temp file first
             if self.watermark_settings.get("enabled"):
@@ -2930,11 +2936,12 @@ Transcript:
         except Exception as e:
             self.log(f"  Warning: Could not delete {landscape_file.name}: {e}")
         
-        try:
-            if portrait_file.exists():
-                portrait_file.unlink()
-        except Exception as e:
-            self.log(f"  Warning: Could not delete {portrait_file.name}: {e}")
+        if portrait:
+            try:
+                if portrait_file.exists():
+                    portrait_file.unlink()
+            except Exception as e:
+                self.log(f"  Warning: Could not delete {portrait_file.name}: {e}")
         
         if add_hook:
             try:
