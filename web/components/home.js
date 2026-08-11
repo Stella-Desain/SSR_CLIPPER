@@ -64,11 +64,11 @@ window.Components.HomeView = function () {
   urlGroup.appendChild(urlRow);
   configBody.appendChild(urlGroup);
 
-  // Options section
+  // Features section
   const optLabel = document.createElement('label');
   optLabel.className = 'field-label';
   optLabel.style.cssText = 'display:block;margin-bottom:10px;';
-  optLabel.textContent = 'Options';
+  optLabel.textContent = 'Features';
   configBody.appendChild(optLabel);
 
   const toggles = document.createElement('div');
@@ -94,15 +94,15 @@ window.Components.HomeView = function () {
     return { element: item, input };
   }
 
-  const clipsToggle = makeToggle('Num Clips', '5 clips', 'num-clips-toggle', true);
-  const captionsToggle = makeToggle('Auto Captions', 'Add captions', 'captions', true);
-  const hookToggle = makeToggle('Hook Scene', 'Add hook', 'hook', false);
-  const portraitToggle = makeToggle('Portrait Mode', '9:16 crop', 'portrait', true);
+  const highlightToggle = makeToggle('Highlight Finder', 'Model name', 'highlight-finder', true);
+  const captionToggle   = makeToggle('Caption Maker',    'Model name', 'caption-maker',    true);
+  const hookToggle      = makeToggle('Hook Maker',       'Model name', 'hook-maker',       true);
+  const titleToggle     = makeToggle('YT Title Maker',   'Model name', 'yt-title-maker',   true);
 
-  toggles.appendChild(clipsToggle.element);
-  toggles.appendChild(captionsToggle.element);
+  toggles.appendChild(highlightToggle.element);
+  toggles.appendChild(captionToggle.element);
   toggles.appendChild(hookToggle.element);
-  toggles.appendChild(portraitToggle.element);
+  toggles.appendChild(titleToggle.element);
   configBody.appendChild(toggles);
 
   // Clips select (hidden, keep for API)
@@ -286,9 +286,10 @@ window.Components.HomeView = function () {
   saveConfigBtn.addEventListener('click', async () => {
     const settings = {
       num_clips: parseInt(clipsSelect.value, 10),
-      add_captions: captionsToggle.input.checked,
+      highlight_finder: highlightToggle.input.checked,
+      add_captions: captionToggle.input.checked,
       add_hook: hookToggle.input.checked,
-      portrait: portraitToggle.input.checked
+      yt_title_maker: titleToggle.input.checked
     };
     try {
       const res = await window.pywebview.api.save_default_config(settings);
@@ -309,9 +310,10 @@ window.Components.HomeView = function () {
       start: startBtn,
       clips: clipsSelect,
       subtitle: subtitleSelect,
-      captions: captionsToggle.input,
+      highlight: highlightToggle.input,
+      captions: captionToggle.input,
       hook: hookToggle.input,
-      portrait: portraitToggle.input,
+      ytTitle: titleToggle.input,
       bar: progressFill,
       status: statusDiv,
       terminal,

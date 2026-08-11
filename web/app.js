@@ -128,8 +128,10 @@ function lockControls(state) {
   homeView.fields.url.disabled = state;
   homeView.fields.clips.disabled = state;
   homeView.fields.subtitle.disabled = state;
+  homeView.fields.highlight.disabled = state;
   homeView.fields.captions.disabled = state;
   homeView.fields.hook.disabled = state;
+  homeView.fields.ytTitle.disabled = state;
   homeView.fields.start.disabled = state;
   if (state) {
     homeView.fields.start.style.opacity = '0.5';
@@ -184,8 +186,7 @@ async function start() {
       parseInt(homeView.fields.clips.value, 10),
       homeView.fields.captions.checked,
       homeView.fields.hook.checked,
-      homeView.fields.subtitle.value,
-      homeView.fields.portrait.checked
+      homeView.fields.subtitle.value
     );
     if (res && res.status === 'started') {
       poll();
@@ -332,33 +333,39 @@ aiView.fields.hmValidateBtn.addEventListener('click', () => validateAndLoad({
 
 // ── Init ──
 async function init() {
+  // ALWAYS show dashboard first — don't wait for API
+  setProviderType(providerType, false);
+  setActiveView('dashboard');
+
   await waitForApi();
+  if (!window.pywebview || !window.pywebview.api) return;
 
   // Load AI settings
   try {
     const ai = await window.pywebview.api.get_ai_settings();
-    const hf = ai.highlight_finder || {};
-    const cm = ai.caption_maker || {};
-    const hm = ai.hook_maker || {};
-    aiView.fields.hfUrl.value = hf.base_url || '';
-    aiView.fields.hfKey.value = hf.api_key || '';
-    setSelectOptions(aiView.fields.hfModel, [hf.model].filter(Boolean), hf.model || '');
-    aiView.fields.cmUrl.value = cm.base_url || '';
-    aiView.fields.cmKey.value = cm.api_key || '';
-    setSelectOptions(aiView.fields.cmModel, [cm.model].filter(Boolean), cm.model || '');
-    aiView.fields.hmUrl.value = hm.base_url || '';
-    aiView.fields.hmKey.value = hm.api_key || '';
-    setSelectOptions(aiView.fields.hmModel, [hm.model].filter(Boolean), hm.model || '');
-  } catch {}
+    const hf = (ai && ai.highlight_finder) || {};
+    const cm = (ai && ai.caption_maker) || {};
+    const hm = (ai && ai.hook_maker) || {};
+    if (aiView.fields.hfUrl) aiView.fields.hfUrl.value = hf.base_url || '';
+    if (aiView.fields.hfKey) aiView.fields.hfKey.value = hf.api_key || '';
+    if (aiView.fields.hfModel) setSelectOptions(aiView.fields.hfModel, [hf.model].filter(Boolean), hf.model || '');
+    if (aiView.fields.cmUrl) aiView.fields.cmUrl.value = cm.base_url || '';
+    if (aiView.fields.cmKey) aiView.fields.cmKey.value = cm.api_key || '';
+    if (aiView.fields.cmModel) setSelectOptions(aiView.fields.cmModel, [cm.model].filter(Boolean), cm.model || '');
+    if (aiView.fields.hmUrl) aiView.fields.hmUrl.value = hm.base_url || '';
+    if (aiView.fields.hmKey) aiView.fields.hmKey.value = hm.api_key || '';
+    if (aiView.fields.hmModel) setSelectOptions(aiView.fields.hmModel, [hm.model].filter(Boolean), hm.model || '');
+  } catch(e) { console.warn('AI settings load failed:', e); }
 
   // Load provider type
   try {
     const provider = await window.pywebview.api.get_provider_type();
-    providerType = provider.provider_type || 'ytclip';
-  } catch {}
+    providerType = (provider && provider.provider_type) || 'ytclip';
+    setProviderType(providerType, true);
+  } catch(e) { console.warn('Provider type load failed:', e); }
 
-  setProviderType(providerType, true);
-  setActiveView('dashboard');
+  // Refresh dashboard data now that API is ready
+  if (dashboardView.refresh) dashboardView.refresh();
 }
 
 // ── Load Dependency Status ──
@@ -366,8 +373,6 @@ async function loadDepStatus() {
   try {
     const deps = await window.pywebview.api.check_dependencies();
     const dots = aiView.element.querySelectorAll('.dep-dot');
-    const labels = ['ytdlp', 'ffmpeg', 'deno', 'whisper'];
-    const vals = [deps.cookies !== undefined ? deps.ffmpeg : false, deps.ffmpeg, deps.deno, deps.whisper];
     // Map: yt-dlp, ffmpeg, deno, whisper
     const depMap = [deps.ffmpeg, deps.ffmpeg, deps.deno, deps.whisper];
     dots.forEach((dot, i) => {
@@ -375,10 +380,16 @@ async function loadDepStatus() {
       dot.classList.toggle('err', !ok);
       dot.classList.toggle('ok', !!ok);
     });
-  } catch {}
+  } catch(e) { console.warn('Dep status load failed:', e); }
 }
 
 window.addEventListener('pywebviewready', init);
 window.addEventListener('pywebviewready', loadDepStatus);
-setTimeout(() => init(), 800);
-setTimeout(() => loadDepStatus(), 1200);
+// Fallback: if pywebviewready never fires (dev browser mode), init after delay
+setTimeout(() => {
+  if (!window._initDone) init();
+  if (!window._depsDone) loadDepStatus();
+}, 1500);
+window._initDone = false;
+window._depsDone = false;
+

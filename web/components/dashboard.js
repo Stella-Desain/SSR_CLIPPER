@@ -371,75 +371,73 @@ window.Components.DashboardView = function () {
       }
 
       // Load Campaigns Tree
-      const campaigns = await window.pywebview.api.get_campaigns();
-      if (campaigns) {
-        treeContainer.innerHTML = ''; // Clear previous
+      let campaigns = [];
+      try { campaigns = await window.pywebview.api.get_campaigns(); } catch(e) {}
+      if (campaigns && campaigns.length > 0) {
+        treeContainer.innerHTML = '';
         campaigns.forEach((camp, idx) => {
-          // Custom build for dynamic tree item based on makeTreeItem logic
           const item = document.createElement('div');
           item.style.cssText = 'margin-bottom:0;';
-          let isOpen = true; // default open
-          
+          let isOpen = true;
+
           const summary = document.createElement('div');
-          const getSummaryStyle = (open) => \`display:flex;justify-content:space-between;align-items:center;padding:9px 10px 9px 6px;border-radius:6px;background:\${open ? '#F2FCE2' : 'transparent'};cursor:pointer;transition:background 150ms ease;\`;
-          summary.style.cssText = getSummaryStyle(isOpen);
-          
-          const updateSummaryHtml = (open) => {
-            summary.innerHTML = \`
-              <div style="display:flex;align-items:center;gap:6px;">
-                <svg style="width:7px;height:7px;color:\${open ? '#2E4D0F' : '#6B7280'};transform:\${open ? 'rotate(0deg)' : 'rotate(-90deg)'};transition:transform 150ms;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-                <span style="font-size:13px;font-weight:600;color:\${open ? '#2E4D0F' : '#374151'};">\${camp.name}</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:12px;">
-                <span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:\${open ? '#2E4D0F' : '#6B7280'};">
-                  \${camp.counts.split('/')[0]}
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zm-11-2l6-5-6-5v10z"/></svg>
-                </span>
-                <span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:\${open ? '#2E4D0F' : '#6B7280'};">
-                  \${camp.counts.split('/')[1] || 0}
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
-                </span>
-              </div>
-            \`;
-          };
-          updateSummaryHtml(isOpen);
+          function getSummaryBg(open) {
+            summary.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:9px 10px 9px 6px;border-radius:6px;cursor:pointer;transition:background 150ms ease;background:' + (open ? '#F2FCE2' : 'transparent') + ';';
+          }
+          getSummaryBg(isOpen);
+
+          function updateSummary(open) {
+            const counts = (camp.counts || '0/0').split('/');
+            summary.innerHTML =
+              '<div style="display:flex;align-items:center;gap:6px;">' +
+                '<svg style="width:7px;height:7px;color:' + (open ? '#2E4D0F' : '#6B7280') + ';transform:' + (open ? 'rotate(0deg)' : 'rotate(-90deg)') + ';transition:transform 150ms;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>' +
+                '<span style="font-size:13px;font-weight:600;color:' + (open ? '#2E4D0F' : '#374151') + ';">' + (camp.name || 'Campaign') + '</span>' +
+              '</div>' +
+              '<div style="display:flex;align-items:center;gap:12px;">' +
+                '<span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:' + (open ? '#2E4D0F' : '#6B7280') + ';">' +
+                  (counts[0] || '0') +
+                  '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zm-11-2l6-5-6-5v10z"/></svg>' +
+                '</span>' +
+                '<span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:' + (open ? '#2E4D0F' : '#6B7280') + ';">' +
+                  (counts[1] || '0') +
+                  '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>' +
+                '</span>' +
+              '</div>';
+          }
+          updateSummary(isOpen);
           item.appendChild(summary);
 
           const childrenSlot = document.createElement('div');
-          childrenSlot.style.cssText = \`position:relative;padding-left:20px;display:\${isOpen ? 'block' : 'none'};\`;
-          
+          childrenSlot.style.cssText = 'position:relative;padding-left:20px;display:' + (isOpen ? 'block' : 'none') + ';';
+
           if (camp.children && camp.children.length > 0) {
             const vline = document.createElement('div');
             vline.style.cssText = 'position:absolute;left:18px;top:0;bottom:10px;width:1px;background:#E5E7EB;';
             childrenSlot.appendChild(vline);
-            
             camp.children.forEach((childName, cIdx) => {
               const childRow = document.createElement('div');
-              childRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:9px 0 9px 20px;cursor:pointer;transition:background 150ms ease;border-radius:4px;';
-              childRow.innerHTML = \`
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <div style="width:12px;height:12px;border-radius:50%;background:#111827;flex-shrink:0;"></div>
-                  <span style="font-size:13px;font-weight:400;color:#374151;">\${childName}</span>
-                </div>
-              \`;
+              childRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:9px 0 9px 20px;cursor:pointer;border-radius:4px;';
+              childRow.innerHTML =
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                  '<div style="width:12px;height:12px;border-radius:50%;background:#111827;flex-shrink:0;"></div>' +
+                  '<span style="font-size:13px;font-weight:400;color:#374151;">' + childName + '</span>' +
+                '</div>';
               const hconn = document.createElement('div');
-              hconn.style.cssText = 'position:absolute;left:18px;top:'+(19 + cIdx*38)+'px;width:14px;height:1px;background:#E5E7EB;';
+              hconn.style.cssText = 'position:absolute;left:18px;top:' + (19 + cIdx * 38) + 'px;width:14px;height:1px;background:#E5E7EB;';
               childrenSlot.appendChild(hconn);
               childrenSlot.appendChild(childRow);
             });
           }
           item.appendChild(childrenSlot);
-          
-          // Toggle logic
+
           summary.addEventListener('click', () => {
             isOpen = !isOpen;
-            summary.style.cssText = getSummaryStyle(isOpen);
-            updateSummaryHtml(isOpen);
+            getSummaryBg(isOpen);
+            updateSummary(isOpen);
             childrenSlot.style.display = isOpen ? 'block' : 'none';
           });
-          
+
           treeContainer.appendChild(item);
-          
           if (idx < campaigns.length - 1) {
             const spacer = document.createElement('div');
             spacer.style.height = '8px';
