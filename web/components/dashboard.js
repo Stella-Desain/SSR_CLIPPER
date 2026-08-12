@@ -73,7 +73,7 @@ window.Components.DashboardView = function () {
         </span>
         <!-- 12 + Instagram -->
         <span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.65);">
-          12
+          <span id="dash-instagram-count">12</span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.65)"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
         </span>
       </div>
@@ -165,7 +165,7 @@ window.Components.DashboardView = function () {
   campHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:25px 25px 0 25px;';
   campHead.innerHTML = `
     <h2 style="font-size:18px;font-weight:700;color:#111827;line-height:1.2;">Campaign</h2>
-    <button style="display:flex;align-items:center;gap:6px;height:30px;padding:0 13px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:8px;font-size:12px;font-weight:500;color:#374151;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.04);transition:background 150ms ease;" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background='#FFFFFF'">
+    <button onclick="alert('Fitur belum tersedia'); /* TODO: backend restock_clip belum ada, perlu keputusan produk */" style="display:flex;align-items:center;gap:6px;height:30px;padding:0 13px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:8px;font-size:12px;font-weight:500;color:#374151;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.04);transition:background 150ms ease;" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background='#FFFFFF'">
       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
       Restock Clip
     </button>
@@ -176,87 +176,7 @@ window.Components.DashboardView = function () {
   const treeContainer = document.createElement('div');
   treeContainer.style.cssText = 'padding:20px 25px 25px 25px;display:flex;flex-direction:column;gap:0;';
 
-  function makeTreeItem(name, isOpen) {
-    const item = document.createElement('div');
-    item.style.cssText = 'margin-bottom:0;';
 
-    // Summary row (Figma 2:101) — lime green bg when expanded
-    const summary = document.createElement('div');
-    summary.style.cssText = `
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      padding:9px 10px 9px 6px;
-      border-radius:6px;
-      background:${isOpen ? '#F2FCE2' : 'transparent'};
-      cursor:pointer;
-      transition:background 150ms ease;
-    `;
-    summary.innerHTML = `
-      <div style="display:flex;align-items:center;gap:6px;">
-        <!-- chevron icon (Figma 2:104) -->
-        <svg style="width:7px;height:7px;color:${isOpen ? '#2E4D0F' : '#6B7280'};transform:${isOpen ? 'rotate(0deg)' : 'rotate(-90deg)'};" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-        <span style="font-size:13px;font-weight:600;color:${isOpen ? '#2E4D0F' : '#374151'};">${name}</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <!-- count + chat icon -->
-        <span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:${isOpen ? '#2E4D0F' : '#6B7280'};">
-          3
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zm-11-2l6-5-6-5v10z"/></svg>
-        </span>
-        <!-- count + play icon -->
-        <span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:${isOpen ? '#2E4D0F' : '#6B7280'};">
-          150
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
-        </span>
-      </div>
-    `;
-    item.appendChild(summary);
-
-    // Children rows (Figma 2:117)
-    const childrenSlot = document.createElement('div');
-    childrenSlot.style.cssText = `
-      position:relative;
-      padding-left:20px;
-      display:${isOpen ? 'block' : 'none'};
-    `;
-    // Vertical divider (Figma 2:118) — 1px line from Figma x=18
-    const vline = document.createElement('div');
-    vline.style.cssText = 'position:absolute;left:18px;top:0;bottom:10px;width:1px;background:#E5E7EB;';
-    childrenSlot.appendChild(vline);
-
-    const childNames = ['Cliper Account 1', 'Cliper Account 1', 'Cliper Account 1'];
-    childNames.forEach((childName, idx) => {
-      const childRow = document.createElement('div');
-      childRow.style.cssText = `
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        padding:9px 0 9px 20px;
-        cursor:pointer;
-        transition:background 150ms ease;
-        border-radius:4px;
-      `;
-      childRow.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:12px;height:12px;border-radius:50%;background:#111827;flex-shrink:0;"></div>
-          <span style="font-size:13px;font-weight:400;color:#374151;">${childName}</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:#6B7280;">
-          50
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style="color:#6B7280;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
-        </div>
-      `;
-      // horizontal connector from divider to row
-      const hconn = document.createElement('div');
-      hconn.style.cssText = 'position:absolute;left:18px;top:'+(19 + idx*38)+'px;width:14px;height:1px;background:#E5E7EB;';
-      childrenSlot.appendChild(hconn);
-      childrenSlot.appendChild(childRow);
-    });
-
-    item.appendChild(childrenSlot);
-    return item;
-  }
 
   // Initial clear (will be populated dynamically in refresh)
   treeContainer.innerHTML = '';
@@ -316,7 +236,7 @@ window.Components.DashboardView = function () {
   jobsHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:25px 25px 0 25px;';
   jobsHead.innerHTML = `
     <h2 style="font-size:18px;font-weight:700;color:#111827;line-height:1.2;">Jobs Proses</h2>
-    <button style="display:flex;align-items:center;gap:5px;height:30px;padding:0 13px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:8px;font-size:12px;font-weight:500;color:#374151;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.04);transition:background 150ms ease;" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background='#FFFFFF'">
+    <button onclick="if(window.setActiveView) window.setActiveView('create-clip'); else { const nav = document.querySelector('.shell .nav-item[data-view=\\'create-clip\\']'); if(nav) nav.click(); }" style="display:flex;align-items:center;gap:5px;height:30px;padding:0 13px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:8px;font-size:12px;font-weight:500;color:#374151;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.04);transition:background 150ms ease;" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background='#FFFFFF'">
       <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       New Clip
     </button>
@@ -368,6 +288,9 @@ window.Components.DashboardView = function () {
         
         const ytCountEl = section.querySelector('#dash-youtube-count');
         if (ytCountEl) ytCountEl.textContent = accStats.youtube_count;
+
+        const igCountEl = section.querySelector('#dash-instagram-count');
+        if (igCountEl) igCountEl.textContent = accStats.instagram_count;
       }
 
       // Load Campaigns Tree

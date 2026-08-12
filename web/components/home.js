@@ -94,28 +94,42 @@ window.Components.HomeView = function () {
     return { element: item, input };
   }
 
+  const portraitToggle  = makeToggle('Portrait Mode',    'Model name', 'portrait-mode',    false);
   const highlightToggle = makeToggle('Highlight Finder', 'Model name', 'highlight-finder', true);
   const captionToggle   = makeToggle('Caption Maker',    'Model name', 'caption-maker',    true);
   const hookToggle      = makeToggle('Hook Maker',       'Model name', 'hook-maker',       true);
   const titleToggle     = makeToggle('YT Title Maker',   'Model name', 'yt-title-maker',   true);
 
+  toggles.appendChild(portraitToggle.element);
   toggles.appendChild(highlightToggle.element);
   toggles.appendChild(captionToggle.element);
   toggles.appendChild(hookToggle.element);
   toggles.appendChild(titleToggle.element);
   configBody.appendChild(toggles);
 
-  // Clips select (hidden, keep for API)
+  // Clips select
+  const clipsLabel = document.createElement('label');
+  clipsLabel.className = 'field-label';
+  clipsLabel.style.cssText = 'display:block;margin-top:10px;margin-bottom:6px;';
+  clipsLabel.textContent = 'Number of Clips';
+  configBody.appendChild(clipsLabel);
   const clipsSelect = document.createElement('select');
-  clipsSelect.className = 'hidden';
+  clipsSelect.className = 'input';
   clipsSelect.id = 'clips';
+  clipsSelect.style.marginBottom = '10px';
   clipsSelect.innerHTML = '<option value="3">3</option><option value="5" selected>5</option><option value="8">8</option>';
   configBody.appendChild(clipsSelect);
 
-  // Subtitle select (hidden)
+  // Subtitle select
+  const subtitleLabel = document.createElement('label');
+  subtitleLabel.className = 'field-label';
+  subtitleLabel.style.cssText = 'display:block;margin-top:10px;margin-bottom:6px;';
+  subtitleLabel.textContent = 'Subtitle Language';
+  configBody.appendChild(subtitleLabel);
   const subtitleSelect = document.createElement('select');
-  subtitleSelect.className = 'hidden';
+  subtitleSelect.className = 'input';
   subtitleSelect.id = 'subtitle';
+  subtitleSelect.style.marginBottom = '10px';
   subtitleSelect.innerHTML = '<option value="id" selected>Indonesian</option><option value="en">English</option>';
   configBody.appendChild(subtitleSelect);
 
@@ -127,7 +141,7 @@ window.Components.HomeView = function () {
       <label class="field-label">Cookies</label>
       <span style="font-size:11px;color:var(--text-muted);">Expired in 2 weeks</span>
     </div>
-    <div class="upload-zone">Upload Your Cookies Here</div>
+    <div class="upload-zone" id="cookies-upload-zone" style="cursor:pointer;">Upload Your Cookies Here</div>
   `;
   configBody.appendChild(cookieSection);
 
@@ -267,25 +281,42 @@ window.Components.HomeView = function () {
 
   setTimeout(() => {
     const cookiesBtn = section.querySelector('#cookies-btn');
-    if (cookiesBtn) {
-      cookiesBtn.addEventListener('click', async () => {
-        try {
-          const res = await window.pywebview.api.upload_cookies();
-          if (res.status === 'ok') {
-            showToast('Cookies uploaded successfully!');
-          } else if (res.status === 'error') {
-            showToast('Error: ' + res.message, true);
-          }
-        } catch (err) {
-          showToast('Failed to upload cookies', true);
+    const cookiesZone = section.querySelector('#cookies-upload-zone');
+    const uploadHandler = async () => {
+      try {
+        const res = await window.pywebview.api.upload_cookies();
+        if (res.status === 'ok') {
+          showToast('Cookies uploaded successfully!');
+        } else if (res.status === 'error') {
+          showToast('Error: ' + res.message, true);
         }
-      });
+      } catch (err) {
+        showToast('Failed to upload cookies', true);
+      }
+    };
+    if (cookiesBtn) cookiesBtn.addEventListener('click', uploadHandler);
+    if (cookiesZone) cookiesZone.addEventListener('click', uploadHandler);
+
+    async function loadDefaultConfig() {
+      try {
+        const config = await window.pywebview.api.get_default_config();
+        if (config) {
+          if (config.num_clips !== undefined) clipsSelect.value = config.num_clips;
+          if (config.portrait !== undefined) portraitToggle.input.checked = config.portrait;
+          if (config.highlight_finder !== undefined) highlightToggle.input.checked = config.highlight_finder;
+          if (config.add_captions !== undefined) captionToggle.input.checked = config.add_captions;
+          if (config.add_hook !== undefined) hookToggle.input.checked = config.add_hook;
+          if (config.yt_title_maker !== undefined) titleToggle.input.checked = config.yt_title_maker;
+        }
+      } catch (err) {}
     }
+    loadDefaultConfig();
   }, 0);
 
   saveConfigBtn.addEventListener('click', async () => {
     const settings = {
       num_clips: parseInt(clipsSelect.value, 10),
+      portrait: portraitToggle.input.checked,
       highlight_finder: highlightToggle.input.checked,
       add_captions: captionToggle.input.checked,
       add_hook: hookToggle.input.checked,
@@ -310,6 +341,7 @@ window.Components.HomeView = function () {
       start: startBtn,
       clips: clipsSelect,
       subtitle: subtitleSelect,
+      portrait: portraitToggle.input,
       highlight: highlightToggle.input,
       captions: captionToggle.input,
       hook: hookToggle.input,

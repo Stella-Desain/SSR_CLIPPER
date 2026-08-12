@@ -602,8 +602,10 @@ KONTEN
 Transcript:
 {transcript}"""
     
-    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True):
+    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True):
         """Main processing pipeline"""
+        
+        # TODO: logic highlight_finder/yt_title_maker belum diimplementasi di core
         
         # Step 1: Download video
         self.set_progress("Downloading video...", 0.1)

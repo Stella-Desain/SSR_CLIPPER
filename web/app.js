@@ -186,7 +186,10 @@ async function start() {
       parseInt(homeView.fields.clips.value, 10),
       homeView.fields.captions.checked,
       homeView.fields.hook.checked,
-      homeView.fields.subtitle.value
+      homeView.fields.subtitle.value,
+      homeView.fields.portrait.checked,
+      homeView.fields.highlight.checked,
+      homeView.fields.ytTitle.checked
     );
     if (res && res.status === 'started') {
       poll();
@@ -274,12 +277,68 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
       base_url: aiView.fields.hmUrl.value.trim(),
       api_key: aiView.fields.hmKey.value.trim(),
       model: aiView.fields.hmModel.value.trim()
+    },
+    custom_provider: {
+      base_url: aiView.fields.cpUrl ? aiView.fields.cpUrl.value.trim() : "",
+      api_key: aiView.fields.cpKey ? aiView.fields.cpKey.value.trim() : ""
+    },
+    yt_title_maker: {
+      model: aiView.fields.ytModel ? aiView.fields.ytModel.value.trim() : ""
+    },
+    whisper_model: aiView.fields.whisperModel ? aiView.fields.whisperModel.value : "large-v3-turbo",
+    repliz: {
+      access_key: aiView.fields.replizAccessKey ? aiView.fields.replizAccessKey.value.trim() : "",
+      secret_key: aiView.fields.replizSecretKey ? aiView.fields.replizSecretKey.value.trim() : ""
     }
+  };
+  const wmPayload = {
+    enabled: aiView.fields.wmEnableCheck ? aiView.fields.wmEnableCheck.checked : false,
+    image_path: aiView.fields.wmImagePath ? aiView.fields.wmImagePath.value : "",
+    position_x: aiView.fields.wmPosX ? parseFloat(aiView.fields.wmPosX.value) : 0.85,
+    position_y: aiView.fields.wmPosY ? parseFloat(aiView.fields.wmPosY.value) : 0.05,
+    opacity: aiView.fields.wmOpacity ? parseFloat(aiView.fields.wmOpacity.value) : 0.8,
+    scale: aiView.fields.wmScale ? parseFloat(aiView.fields.wmScale.value) : 0.15
+  };
+  const cwPayload = {
+    enabled: aiView.fields.cwEnableCheck ? aiView.fields.cwEnableCheck.checked : false,
+    position_x: aiView.fields.cwPosX ? parseFloat(aiView.fields.cwPosX.value) : 0.5,
+    position_y: aiView.fields.cwPosY ? parseFloat(aiView.fields.cwPosY.value) : 0.95,
+    size: aiView.fields.cwSize ? parseFloat(aiView.fields.cwSize.value) : 0.03,
+    opacity: aiView.fields.cwOpacity ? parseFloat(aiView.fields.cwOpacity.value) : 0.7
+  };
+  const hsPayload = {
+    font_name: aiView.fields.hsFontSelect ? aiView.fields.hsFontSelect.value : "Arial",
+    font_size: aiView.fields.hsFontSize ? parseFloat(aiView.fields.hsFontSize.value) : 0.054,
+    font_color: aiView.fields.hsFontColor ? aiView.fields.hsFontColor.value : "#FFD700",
+    bg_color: aiView.fields.hsBgColor ? aiView.fields.hsBgColor.value : "#FFFFFF",
+    corner_radius: aiView.fields.hsCorner ? parseInt(aiView.fields.hsCorner.value) : 0,
+    position_x: aiView.fields.hsPosX ? parseFloat(aiView.fields.hsPosX.value) : 0.5,
+    position_y: aiView.fields.hsPosY ? parseFloat(aiView.fields.hsPosY.value) : 0.333
+  };
+  const ftPayload = {
+    face_tracking_mode: (aiView.fields.ftMediapipeRadio && aiView.fields.ftMediapipeRadio.checked) ? "mediapipe" : "opencv",
+    gpu_enabled: aiView.fields.gaEnableCheck ? aiView.fields.gaEnableCheck.checked : false
+  };
+  const odPayload = {
+    output_dir: aiView.fields.odPath ? aiView.fields.odPath.value : ""
   };
   aiView.fields.status.textContent = 'Saving...';
   try {
-    const res = await window.pywebview.api.save_ai_settings(payload);
-    aiView.fields.status.textContent = res && res.status === 'saved' ? '✓ Saved successfully' : 'Error saving';
+    const [res, wmRes, cwRes, hsRes, ftRes, odRes] = await Promise.all([
+      window.pywebview.api.save_ai_settings(payload),
+      window.pywebview.api.save_watermark_settings(wmPayload),
+      window.pywebview.api.save_credit_watermark_settings(cwPayload),
+      window.pywebview.api.save_hook_style_settings(hsPayload),
+      window.pywebview.api.save_face_tracking_settings(ftPayload),
+      window.pywebview.api.save_output_dir_settings(odPayload)
+    ]);
+    const allOk = res && res.status === 'saved'
+      && wmRes && wmRes.status === 'ok'
+      && cwRes && cwRes.status === 'ok'
+      && hsRes && hsRes.status === 'ok'
+      && ftRes && ftRes.status === 'ok'
+      && odRes && odRes.status === 'ok';
+    aiView.fields.status.textContent = allOk ? '✓ Saved successfully' : 'Error saving some settings';
   } catch {
     aiView.fields.status.textContent = 'Error saving settings';
   }
@@ -305,7 +364,7 @@ async function validateAndLoad(kind) {
   kind.status.style.color = 'var(--text-muted)';
   const modelsRes = await window.pywebview.api.get_models(baseUrl, apiKey);
   const models = (modelsRes && modelsRes.models) || [];
-  setSelectOptions(kind.model, models, kind.model.value);
+  if (kind.model) setSelectOptions(kind.model, models, kind.model.value);
   kind.status.textContent = models.length ? '✓ Valid' : '✓ Valid, no models';
   kind.status.style.color = 'var(--success)';
 }
@@ -331,6 +390,71 @@ aiView.fields.hmValidateBtn.addEventListener('click', () => validateAndLoad({
   status: aiView.fields.hmValidateStatus
 }));
 
+if (aiView.fields.cpValidateBtn) {
+  aiView.fields.cpValidateBtn.addEventListener('click', () => validateAndLoad({
+    url: aiView.fields.cpUrl,
+    key: aiView.fields.cpKey,
+    model: null,
+    status: aiView.fields.cpValidateStatus
+  }));
+}
+
+if (aiView.fields.reloadModelBtn) {
+    aiView.fields.reloadModelBtn.addEventListener('click', async () => {
+        aiView.fields.reloadModelBtn.disabled = true;
+        aiView.fields.reloadModelBtn.textContent = 'Reloading...';
+        try {
+            const res = await window.pywebview.api.reload_whisper_model();
+            alert(res.message || 'Reload successful');
+        } catch (e) {
+            alert('Reload error: ' + e);
+        }
+        aiView.fields.reloadModelBtn.disabled = false;
+        aiView.fields.reloadModelBtn.innerHTML = `
+          <svg style="width:12px;height:12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          Reload Model
+        `;
+    });
+}
+
+async function loadReplizData() {
+    try {
+        if (!aiView.fields.accountsTitle) return;
+        aiView.fields.accountsTitle.textContent = 'Loading Accounts...';
+        const stats = await window.pywebview.api.get_account_stats();
+        if (stats.error) {
+             aiView.fields.accountsTitle.textContent = 'Failed to load accounts';
+             return;
+        }
+        aiView.fields.accountsTitle.textContent = `${stats.campaigns} Account Connected`;
+    } catch (e) {
+        if (aiView.fields.accountsTitle) aiView.fields.accountsTitle.textContent = 'Error loading accounts';
+    }
+}
+
+if (aiView.fields.replizTestBtn) {
+    aiView.fields.replizTestBtn.addEventListener('click', async () => {
+        const ak = aiView.fields.replizAccessKey.value.trim();
+        const sk = aiView.fields.replizSecretKey.value.trim();
+        aiView.fields.replizStatus.textContent = 'Testing connection...';
+        aiView.fields.replizStatus.style.color = '#A1A1AA';
+        try {
+            const res = await window.pywebview.api.test_repliz_connection(ak, sk);
+            if (res.status === 'success') {
+                aiView.fields.replizStatus.textContent = '✓ Connected successfully';
+                aiView.fields.replizStatus.style.color = 'var(--success)';
+                loadReplizData();
+            } else {
+                aiView.fields.replizStatus.textContent = '✗ ' + (res.message || 'Connection failed');
+                aiView.fields.replizStatus.style.color = 'var(--error)';
+            }
+        } catch(e) {
+            aiView.fields.replizStatus.textContent = '✗ Error testing connection';
+            aiView.fields.replizStatus.style.color = 'var(--error)';
+        }
+    });
+}
+
 // ── Init ──
 async function init() {
   // ALWAYS show dashboard first — don't wait for API
@@ -355,7 +479,83 @@ async function init() {
     if (aiView.fields.hmUrl) aiView.fields.hmUrl.value = hm.base_url || '';
     if (aiView.fields.hmKey) aiView.fields.hmKey.value = hm.api_key || '';
     if (aiView.fields.hmModel) setSelectOptions(aiView.fields.hmModel, [hm.model].filter(Boolean), hm.model || '');
-  } catch(e) { console.warn('AI settings load failed:', e); }
+    
+    const cp = (ai && ai.custom_provider) || {};
+    const yt = (ai && ai.yt_title_maker) || {};
+    const rep = (ai && ai.repliz) || {};
+    if (aiView.fields.cpUrl) aiView.fields.cpUrl.value = cp.base_url || '';
+    if (aiView.fields.cpKey) aiView.fields.cpKey.value = cp.api_key || '';
+    if (aiView.fields.ytModel) setSelectOptions(aiView.fields.ytModel, [yt.model].filter(Boolean), yt.model || '');
+    if (aiView.fields.whisperModel && ai.whisper_model) aiView.fields.whisperModel.value = ai.whisper_model;
+    if (aiView.fields.replizAccessKey) aiView.fields.replizAccessKey.value = rep.access_key || '';
+    if (aiView.fields.replizSecretKey) aiView.fields.replizSecretKey.value = rep.secret_key || '';
+    
+    // Load Watermark Settings
+    const wm = await window.pywebview.api.get_watermark_settings();
+    if (wm) {
+        if (aiView.fields.wmEnableCheck) aiView.fields.wmEnableCheck.checked = !!wm.enabled;
+        if (aiView.fields.wmImagePath) aiView.fields.wmImagePath.value = wm.image_path || '';
+        if (aiView.fields.wmPosX) { aiView.fields.wmPosX.value = wm.position_x !== undefined ? wm.position_x : 0.85; aiView.fields.wmPosX.dispatchEvent(new Event('input')); }
+        if (aiView.fields.wmPosY) { aiView.fields.wmPosY.value = wm.position_y !== undefined ? wm.position_y : 0.05; aiView.fields.wmPosY.dispatchEvent(new Event('input')); }
+        if (aiView.fields.wmOpacity) { aiView.fields.wmOpacity.value = wm.opacity !== undefined ? wm.opacity : 0.8; aiView.fields.wmOpacity.dispatchEvent(new Event('input')); }
+        if (aiView.fields.wmScale) { aiView.fields.wmScale.value = wm.scale !== undefined ? wm.scale : 0.15; aiView.fields.wmScale.dispatchEvent(new Event('input')); }
+    }
+    
+    // Load Credit Watermark Settings
+    const cw = await window.pywebview.api.get_credit_watermark_settings();
+    if (cw) {
+        if (aiView.fields.cwEnableCheck) aiView.fields.cwEnableCheck.checked = !!cw.enabled;
+        if (aiView.fields.cwPosX) { aiView.fields.cwPosX.value = cw.position_x !== undefined ? cw.position_x : 0.5; aiView.fields.cwPosX.dispatchEvent(new Event('input')); }
+        if (aiView.fields.cwPosY) { aiView.fields.cwPosY.value = cw.position_y !== undefined ? cw.position_y : 0.95; aiView.fields.cwPosY.dispatchEvent(new Event('input')); }
+        if (aiView.fields.cwSize) { aiView.fields.cwSize.value = cw.size !== undefined ? cw.size : 0.03; aiView.fields.cwSize.dispatchEvent(new Event('input')); }
+        if (aiView.fields.cwOpacity) { aiView.fields.cwOpacity.value = cw.opacity !== undefined ? cw.opacity : 0.7; aiView.fields.cwOpacity.dispatchEvent(new Event('input')); }
+    }
+    
+    // Load Hook Style Settings
+    const hs = await window.pywebview.api.get_hook_style_settings();
+    const fontsRes = await window.pywebview.api.get_system_fonts();
+    
+    if (aiView.fields.hsFontSelect && fontsRes && fontsRes.status === 'ok') {
+        const fonts = fontsRes.fonts || ["Arial"];
+        setSelectOptions(aiView.fields.hsFontSelect, fonts, hs ? hs.font_name : "Arial");
+    }
+
+    if (hs) {
+        if (aiView.fields.hsFontColor) aiView.fields.hsFontColor.value = hs.font_color || '#FFD700';
+        if (aiView.fields.hsBgColor) aiView.fields.hsBgColor.value = hs.bg_color || '#FFFFFF';
+        if (aiView.fields.hsFontSize) { aiView.fields.hsFontSize.value = hs.font_size !== undefined ? hs.font_size : 0.054; aiView.fields.hsFontSize.dispatchEvent(new Event('input')); }
+        if (aiView.fields.hsCorner) { aiView.fields.hsCorner.value = hs.corner_radius !== undefined ? hs.corner_radius : 0; aiView.fields.hsCorner.dispatchEvent(new Event('input')); }
+        if (aiView.fields.hsPosX) { aiView.fields.hsPosX.value = hs.position_x !== undefined ? hs.position_x : 0.5; aiView.fields.hsPosX.dispatchEvent(new Event('input')); }
+        if (aiView.fields.hsPosY) { aiView.fields.hsPosY.value = hs.position_y !== undefined ? hs.position_y : 0.333; aiView.fields.hsPosY.dispatchEvent(new Event('input')); }
+    }
+
+    // Load Face Tracking & GPU Settings
+    const ftCfg = await window.pywebview.api.get_face_tracking_settings();
+    if (ftCfg) {
+        if (ftCfg.face_tracking_mode === 'mediapipe') {
+            if (aiView.fields.ftMediapipeRadio) aiView.fields.ftMediapipeRadio.checked = true;
+        } else {
+            if (aiView.fields.ftOpencvRadio) aiView.fields.ftOpencvRadio.checked = true;
+        }
+        if (aiView.fields.gaEnableCheck) aiView.fields.gaEnableCheck.checked = !!ftCfg.gpu_enabled;
+    }
+
+    // Load Output Dir Settings
+    const odCfg = await window.pywebview.api.get_output_dir_settings();
+    if (odCfg && aiView.fields.odPath) {
+        aiView.fields.odPath.value = odCfg.output_dir || '';
+    }
+
+    loadReplizData();
+  } catch(e) { console.warn('Settings load failed:', e); }
+
+  try {
+    const appCfg = await window.pywebview.api.get_app_config();
+    const nameSpan = document.getElementById('header-username');
+    if (nameSpan && appCfg && appCfg.owner_name) {
+      nameSpan.textContent = appCfg.owner_name;
+    }
+  } catch(e) { console.warn('App config load failed:', e); }
 
   // Load provider type
   try {

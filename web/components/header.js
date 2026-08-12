@@ -74,9 +74,10 @@ window.Components.Shell = function () {
   topHeader.className = 'top-header';
   topHeader.innerHTML = `
     <div class="top-header-left">
-      <span class="top-header-user">Bintang SSR</span>
+      <span class="top-header-user" id="header-username">Local User</span>
     </div>
-    <div class="top-header-search">
+    <div class="top-header-search" style="display: none;">
+      <!-- TODO: scope search belum ditentukan -->
       <div class="search-wrapper">
         <div class="search-icon">
           <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
@@ -84,7 +85,8 @@ window.Components.Shell = function () {
         <input class="search-input" type="text" placeholder="Search anything...">
       </div>
     </div>
-    <div class="top-header-actions">
+    <div class="top-header-actions" style="display: none;">
+      <!-- TODO: fitur wallet/notifikasi belum diimplementasi -->
       <button class="header-icon-btn">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"></path><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"></path><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"></path></svg>
       </button>
