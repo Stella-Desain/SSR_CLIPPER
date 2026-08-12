@@ -97,9 +97,10 @@ function setProviderType(type, applyBaseUrl) {
 
   if (applyBaseUrl && !showCustom) {
     const baseUrl = type === 'ytclip' ? 'https://ai-api.ytclip.org/v1' : 'https://api.openai.com/v1';
+    // Only update hfUrl — cmUrl (Anthropic) and hmUrl (Gemini) have their own fixed endpoints
     aiView.fields.hfUrl.value = baseUrl;
-    aiView.fields.cmUrl.value = baseUrl;
-    aiView.fields.hmUrl.value = baseUrl;
+    aiView.fields.cmUrl.value = 'https://api.anthropic.com/v1';
+    aiView.fields.hmUrl.value = 'https://generativelanguage.googleapis.com/v1beta/openai/';
   }
 }
 
@@ -387,36 +388,66 @@ if (installBtn) {
 
 // ── Save AI Settings ──
 aiView.fields.saveBtn.addEventListener('click', async () => {
+  // Use Custom Provider as fallback for empty keys to enable a "Global Provider" workflow
+  const cpUrl = aiView.fields.cpUrl ? aiView.fields.cpUrl.value.trim() : "";
+  const cpKey = aiView.fields.cpKey ? aiView.fields.cpKey.value.trim() : "";
+
+  const getUrl = (field, defaultUrl) => {
+      const val = field ? field.value.trim() : "";
+      return val ? val : (cpUrl || defaultUrl);
+  };
+  const getKey = (field) => {
+      const val = field ? field.value.trim() : "";
+      return val ? val : cpKey;
+  };
+
+  const getSmartPayload = (defaultUrlField, defaultKeyField, modelField) => {
+      const model = modelField ? modelField.value.trim() : "";
+      const lowerModel = model.toLowerCase();
+      
+      // Auto-route to Gemini if it's a Gemini model AND the user provided a Gemini key
+      if (lowerModel.includes("gemini") && aiView.fields.hmKey && aiView.fields.hmKey.value.trim() !== "") {
+          return {
+              base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+              api_key: aiView.fields.hmKey.value.trim(),
+              model: model
+          };
+      }
+      
+      // Auto-route to Anthropic if it's a Claude model AND the user provided an Anthropic key
+      if (lowerModel.includes("claude") && aiView.fields.cmKey && aiView.fields.cmKey.value.trim() !== "") {
+          return {
+              base_url: 'https://api.anthropic.com/v1',
+              api_key: aiView.fields.cmKey.value.trim(),
+              model: model
+          };
+      }
+      
+      // Default fallback
+      return {
+          base_url: getUrl(defaultUrlField, 'https://api.openai.com/v1'),
+          api_key: getKey(defaultKeyField),
+          model: model
+      };
+  };
+
   const payload = {
     _provider_type: providerType,
-    highlight_finder: {
-      base_url: aiView.fields.hfUrl.value.trim(),
-      api_key: aiView.fields.hfKey.value.trim(),
-      model: aiView.fields.hfModel.value.trim()
-    },
-    caption_maker: {
-      base_url: aiView.fields.cmUrl.value.trim(),
-      api_key: aiView.fields.cmKey.value.trim(),
-      model: aiView.fields.cmModel.value.trim()
-    },
-    hook_maker: {
-      base_url: aiView.fields.hmUrl.value.trim(),
-      api_key: aiView.fields.hmKey.value.trim(),
-      model: aiView.fields.hmModel.value.trim()
-    },
+    highlight_finder: getSmartPayload(aiView.fields.hfUrl, aiView.fields.hfKey, aiView.fields.hfModel),
+    caption_maker: getSmartPayload(aiView.fields.cmUrl, aiView.fields.cmKey, aiView.fields.cmModel),
+    hook_maker: getSmartPayload(aiView.fields.hmUrl, aiView.fields.hmKey, aiView.fields.hmModel),
     custom_provider: {
-      base_url: aiView.fields.cpUrl ? aiView.fields.cpUrl.value.trim() : "",
-      api_key: aiView.fields.cpKey ? aiView.fields.cpKey.value.trim() : ""
+      base_url: cpUrl,
+      api_key: cpKey
     },
-    yt_title_maker: {
-      model: aiView.fields.ytModel ? aiView.fields.ytModel.value.trim() : ""
-    },
+    yt_title_maker: getSmartPayload(null, null, aiView.fields.ytModel),
     whisper_model: aiView.fields.whisperModel ? aiView.fields.whisperModel.value : "large-v3-turbo",
     repliz: {
       access_key: aiView.fields.replizAccessKey ? aiView.fields.replizAccessKey.value.trim() : "",
       secret_key: aiView.fields.replizSecretKey ? aiView.fields.replizSecretKey.value.trim() : ""
     }
   };
+  
   const wmPayload = {
     enabled: aiView.fields.wmEnableCheck ? aiView.fields.wmEnableCheck.checked : false,
     image_path: aiView.fields.wmImagePath ? aiView.fields.wmImagePath.value : "",
@@ -450,21 +481,20 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
   };
   aiView.fields.status.textContent = 'Saving...';
   try {
-    const [res, wmRes, cwRes, hsRes, ftRes, odRes] = await Promise.all([
+    const odPath = aiView.fields.odPath ? aiView.fields.odPath.value.trim() : '';
+    const savePromises = [
       window.pywebview.api.save_ai_settings(payload),
       window.pywebview.api.save_watermark_settings(wmPayload),
       window.pywebview.api.save_credit_watermark_settings(cwPayload),
       window.pywebview.api.save_hook_style_settings(hsPayload),
       window.pywebview.api.save_face_tracking_settings(ftPayload),
-      window.pywebview.api.save_output_dir_settings(odPayload)
-    ]);
-    const allOk = res && res.status === 'saved'
-      && wmRes && wmRes.status === 'ok'
-      && cwRes && cwRes.status === 'ok'
-      && hsRes && hsRes.status === 'ok'
-      && ftRes && ftRes.status === 'ok'
-      && odRes && odRes.status === 'ok';
-    aiView.fields.status.textContent = allOk ? '✓ Saved successfully' : 'Error saving some settings';
+    ];
+    // Only save output dir if user actually set a path
+    if (odPath) savePromises.push(window.pywebview.api.save_output_dir_settings(odPayload));
+    
+    const results = await Promise.all(savePromises);
+    const allOk = results.every(r => r && (r.status === 'ok' || r.status === 'saved'));
+    aiView.fields.status.textContent = allOk ? '\u2713 Saved successfully' : 'Error saving some settings';
   } catch {
     aiView.fields.status.textContent = 'Error saving settings';
   }
@@ -490,13 +520,45 @@ async function validateAndLoad(kind) {
   kind.status.style.color = 'var(--text-muted)';
   const modelsRes = await window.pywebview.api.get_models(baseUrl, apiKey);
   const models = (modelsRes && modelsRes.models) || [];
-  if (kind.modelSelect) {
-    const preferred = kind.modelSelect.value;
-    setSelectOptions(kind.modelSelect, models, preferred);
-    if (kind.homeSelect) {
-      setSelectOptions(kind.homeSelect, models, preferred);
+  
+  if (models.length > 0) {
+    // isTTS: model dedicated untuk Text-to-Speech
+    const isTTS = (m) => m.toLowerCase().includes('tts') || m.toLowerCase().endsWith('-tts');
+    // isSTT: model dedicated untuk Speech-to-Text / transcription
+    const isSTT = (m) => {
+        const lower = m.toLowerCase();
+        return lower.includes('whisper') || lower.includes('stt') || lower.endsWith('-audio') || lower.includes('gemini-3');
+    };
+    // Chat = semua yang bukan TTS dan bukan STT (tapi Gemini 3 bisa keduanya, jadi chat juga)
+    const isChat = (m) => !isTTS(m) && (!isSTT(m) || m.toLowerCase().includes('gemini-3'));
+
+    const hfModels = models.filter(isChat);
+    const cmModels = models.filter(isSTT);
+    const hmModels = models.filter(isTTS);
+    const ytModels = models.filter(isChat);
+
+    if (aiView.fields.hfModel) {
+      const pref = aiView.fields.hfModel.value;
+      setSelectOptions(aiView.fields.hfModel, hfModels, pref);
+      if (homeView.fields.highlightSub) setSelectOptions(homeView.fields.highlightSub, hfModels, pref);
+    }
+    if (aiView.fields.cmModel) {
+      const pref = aiView.fields.cmModel.value;
+      setSelectOptions(aiView.fields.cmModel, cmModels, pref);
+      if (homeView.fields.captionSub) setSelectOptions(homeView.fields.captionSub, cmModels, pref);
+    }
+    if (aiView.fields.hmModel) {
+      const pref = aiView.fields.hmModel.value;
+      setSelectOptions(aiView.fields.hmModel, hmModels, pref);
+      if (homeView.fields.hookSub) setSelectOptions(homeView.fields.hookSub, hmModels, pref);
+    }
+    if (aiView.fields.ytModel) {
+      const pref = aiView.fields.ytModel.value;
+      setSelectOptions(aiView.fields.ytModel, ytModels, pref);
+      if (homeView.fields.ytTitleSub) setSelectOptions(homeView.fields.ytTitleSub, ytModels, pref);
     }
   }
+
   kind.status.textContent = models.length ? `✓ Valid, ${models.length} models loaded` : '✓ Valid, no models';
   kind.status.style.color = 'var(--success)';
   // Automatically save after loading models to ensure they persist
@@ -539,7 +601,7 @@ aiView.fields.hfValidateBtn.addEventListener('click', () => validateAndLoad({
 }));
 
 aiView.fields.cmValidateBtn.addEventListener('click', () => validateAndLoad({
-  url: aiView.fields.cmUrl,
+  url: { value: 'https://api.anthropic.com/v1' },
   key: aiView.fields.cmKey,
   modelSelect: aiView.fields.cmModel,
   homeSelect: homeView.fields.captionSub,
@@ -547,7 +609,7 @@ aiView.fields.cmValidateBtn.addEventListener('click', () => validateAndLoad({
 }));
 
 aiView.fields.hmValidateBtn.addEventListener('click', () => validateAndLoad({
-  url: aiView.fields.hmUrl,
+  url: { value: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
   key: aiView.fields.hmKey,
   modelSelect: aiView.fields.hmModel,
   homeSelect: homeView.fields.hookSub,
@@ -638,10 +700,10 @@ async function init() {
     if (aiView.fields.hfUrl) aiView.fields.hfUrl.value = hf.base_url || '';
     if (aiView.fields.hfKey) aiView.fields.hfKey.value = hf.api_key || '';
     if (aiView.fields.hfModel) setSelectOptions(aiView.fields.hfModel, [hf.model].filter(Boolean), hf.model || '');
-    if (aiView.fields.cmUrl) aiView.fields.cmUrl.value = cm.base_url || '';
+    if (aiView.fields.cmUrl) aiView.fields.cmUrl.value = (cm.base_url && cm.base_url !== 'https://api.openai.com/v1') ? cm.base_url : 'https://api.anthropic.com/v1';
     if (aiView.fields.cmKey) aiView.fields.cmKey.value = cm.api_key || '';
     if (aiView.fields.cmModel) setSelectOptions(aiView.fields.cmModel, [cm.model].filter(Boolean), cm.model || '');
-    if (aiView.fields.hmUrl) aiView.fields.hmUrl.value = hm.base_url || '';
+    if (aiView.fields.hmUrl) aiView.fields.hmUrl.value = (hm.base_url && hm.base_url !== 'https://api.openai.com/v1') ? hm.base_url : 'https://generativelanguage.googleapis.com/v1beta/openai/';
     if (aiView.fields.hmKey) aiView.fields.hmKey.value = hm.api_key || '';
     if (aiView.fields.hmModel) setSelectOptions(aiView.fields.hmModel, [hm.model].filter(Boolean), hm.model || '');
     

@@ -805,10 +805,10 @@ window.Components.AiSettingsView = function () {
   hfUrlInput.value = 'https://api.openai.com/v1';
   const cmUrlInput = document.createElement('input');
   cmUrlInput.type = 'hidden';
-  cmUrlInput.value = 'https://api.openai.com/v1';
+  cmUrlInput.value = 'https://api.anthropic.com/v1';
   const hmUrlInput = document.createElement('input');
   hmUrlInput.type = 'hidden';
-  hmUrlInput.value = 'https://api.openai.com/v1';
+  hmUrlInput.value = 'https://generativelanguage.googleapis.com/v1beta/openai/';
 
   section.appendChild(hfUrlInput);
   section.appendChild(cmUrlInput);

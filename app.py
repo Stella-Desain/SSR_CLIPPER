@@ -71,6 +71,13 @@ class WebAPI:
             return {"status": "error", "message": "Missing base URL"}
         if not api_key:
             return {"status": "error", "message": "Missing API key"}
+            
+        # Bypass direct HTTP check for Gemini and Anthropic as they may not support standard /models endpoint for validation
+        if "generativelanguage.googleapis.com" in base_url:
+            return {"status": "ok"}
+        if "api.anthropic.com" in base_url:
+            return {"status": "ok"}
+            
         url = self._get_models_url(base_url)
         try:
             resp = requests.get(url, headers=self._auth_headers(api_key), timeout=10)
@@ -83,6 +90,33 @@ class WebAPI:
     def get_models(self, base_url, api_key):
         if not base_url:
             return {"models": []}
+            
+        # Check if it's Gemini (Google AI Studio)
+        if "generativelanguage.googleapis.com" in base_url:
+            return {"models": [
+                # Chat / Highlight Finder models
+                "gemini-3.6-flash",
+                "gemini-3.5-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-pro-preview",
+                "gemini-3-flash-preview",
+                # Audio / STT-capable models (multimodal, can transcribe audio)
+                "gemini-3.6-flash",
+                "gemini-3.5-flash",
+                "gemini-3.1-pro-preview",
+                # TTS models (Text-to-Speech)
+                "gemini-3.1-flash-tts-preview"
+            ]}
+            
+        # Check if it's Anthropic
+        if "api.anthropic.com" in base_url:
+            return {"models": [
+                "claude-3-5-sonnet-20240620", 
+                "claude-3-opus-20240229", 
+                "claude-3-sonnet-20240229", 
+                "claude-3-haiku-20240307"
+            ]}
+            
         url = self._get_models_url(base_url)
         try:
             resp = requests.get(url, headers=self._auth_headers(api_key), timeout=15)
