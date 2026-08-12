@@ -78,7 +78,20 @@ window.Components.HomeView = function () {
     const item = document.createElement('div');
     item.className = 'toggle-item';
     const left = document.createElement('div');
-    left.innerHTML = `<div class="toggle-item-label">${label}</div><div class="toggle-item-sub">${sub}</div>`;
+    const labelEl = document.createElement('div');
+    labelEl.className = 'toggle-item-label';
+    labelEl.textContent = label;
+    const subEl = document.createElement('select');
+    subEl.className = 'toggle-item-sub select';
+    subEl.style.cssText = 'background:transparent; border:none; color:var(--text-secondary); padding:0 16px 0 0; height:auto; margin-top:2px; font-size:12px; cursor:pointer; width:100%; outline:none; box-shadow:none;';
+    
+    // Add default option
+    const defOpt = document.createElement('option');
+    defOpt.textContent = sub;
+    subEl.appendChild(defOpt);
+
+    left.appendChild(labelEl);
+    left.appendChild(subEl);
     const sw = document.createElement('label');
     sw.className = 'toggle-switch';
     const input = document.createElement('input');
@@ -91,14 +104,18 @@ window.Components.HomeView = function () {
     sw.appendChild(slider);
     item.appendChild(left);
     item.appendChild(sw);
-    return { element: item, input };
+    return { element: item, input, subEl };
   }
 
-  const portraitToggle  = makeToggle('Portrait Mode',    'Model name', 'portrait-mode',    false);
-  const highlightToggle = makeToggle('Highlight Finder', 'Model name', 'highlight-finder', true);
-  const captionToggle   = makeToggle('Caption Maker',    'Model name', 'caption-maker',    true);
-  const hookToggle      = makeToggle('Hook Maker',       'Model name', 'hook-maker',       true);
-  const titleToggle     = makeToggle('YT Title Maker',   'Model name', 'yt-title-maker',   true);
+  const portraitToggle  = makeToggle('Portrait Mode',    'Always enabled', 'portrait-mode',    true);
+  const highlightToggle = makeToggle('Highlight Finder', 'Loading...', 'highlight-finder', true);
+  const captionToggle   = makeToggle('Caption Maker',    'Loading...', 'caption-maker',    true);
+  const hookToggle      = makeToggle('Hook Maker',       'Loading...', 'hook-maker',       true);
+  const titleToggle     = makeToggle('YT Title Maker',   'Loading...', 'yt-title-maker',   true);
+
+  // Portrait is always on — hide the toggle item from UI
+  portraitToggle.element.style.display = 'none';
+  portraitToggle.input.checked = true;
 
   toggles.appendChild(portraitToggle.element);
   toggles.appendChild(highlightToggle.element);
@@ -216,14 +233,21 @@ window.Components.HomeView = function () {
 
   // Terminal area
   const termHeader = document.createElement('div');
-  termHeader.style.cssText = 'display:flex;justify-content:space-between;margin-bottom:6px;';
-  termHeader.innerHTML = `<span class="field-label">Program Running..</span><button class="btn-ghost" style="border:none;background:none;font-size:11px;color:var(--text-muted);cursor:pointer;">Copy</button>`;
+  termHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;';
+  const termLabel = document.createElement('span');
+  termLabel.className = 'field-label';
+  termLabel.textContent = 'Program Log';
+  const termCopyBtn = document.createElement('button');
+  termCopyBtn.className = 'btn-ghost';
+  termCopyBtn.style.cssText = 'border:none;background:none;font-size:11px;color:var(--text-muted);cursor:pointer;';
+  termCopyBtn.textContent = 'Copy';
+  termHeader.appendChild(termLabel);
+  termHeader.appendChild(termCopyBtn);
   progressBody.appendChild(termHeader);
 
   const terminal = document.createElement('div');
   terminal.className = 'terminal';
   terminal.id = 'terminal';
-  terminal.style.flex = '1';
   terminal.textContent = 'Ready...';
   progressBody.appendChild(terminal);
 
@@ -346,9 +370,15 @@ window.Components.HomeView = function () {
       captions: captionToggle.input,
       hook: hookToggle.input,
       ytTitle: titleToggle.input,
+      highlightSub: highlightToggle.subEl,
+      captionSub: captionToggle.subEl,
+      hookSub: hookToggle.subEl,
+      ytTitleSub: titleToggle.subEl,
       bar: progressFill,
       status: statusDiv,
       terminal,
+      termLabel,
+      termCopyBtn,
       stepDownload,
       stepHighlight,
       stepEditing,

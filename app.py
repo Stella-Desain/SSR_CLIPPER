@@ -224,7 +224,29 @@ class WebAPI:
             return {"status": "error", "message": str(e)}
 
     def test_repliz_connection(self, access_key, secret_key):
-        return {"status": "error", "message": "TODO: API Endpoint Repliz belum ada (Dokumentasi belum tersedia)"}
+        try:
+            import requests
+            from requests.auth import HTTPBasicAuth
+            url = "https://api.repliz.com/public/account"
+            params = {"page": 1, "limit": 1}
+            response = requests.get(
+                url, 
+                params=params,
+                auth=HTTPBasicAuth(access_key, secret_key),
+                timeout=10
+            )
+            if response.status_code == 200:
+                return {"status": "success", "message": "Connection successful"}
+            else:
+                error_msg = f"HTTP {response.status_code}"
+                try:
+                    error_msg = response.json().get("message", error_msg)
+                except:
+                    if response.status_code == 401:
+                        error_msg = "Invalid authorization header"
+                return {"status": "error", "message": error_msg}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def get_repliz_dashboard_url(self):
         """Returns the URL for Repliz Dashboard."""
@@ -232,8 +254,35 @@ class WebAPI:
 
     def get_account_stats(self):
         """Returns statistics of connected social accounts."""
-        # TODO: Repliz API belum punya dokumentasi endpoint untuk public account stats
-        return {"error": True, "message": "TODO: API Endpoint Repliz belum ada (Dokumentasi belum tersedia)"}
+        try:
+            cfg = self._get_cfg()
+            repliz_cfg = cfg.get("repliz", {})
+            access_key = repliz_cfg.get("access_key")
+            secret_key = repliz_cfg.get("secret_key")
+            
+            if not access_key or not secret_key:
+                return {"error": True, "message": "Keys not configured"}
+                
+            import requests
+            from requests.auth import HTTPBasicAuth
+            url = "https://api.repliz.com/public/account"
+            params = {"page": 1, "limit": 10}
+            
+            response = requests.get(
+                url, 
+                params=params,
+                auth=HTTPBasicAuth(access_key, secret_key),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                total = data.get("totalDocs", 0)
+                return {"campaigns": total, "error": False}
+            else:
+                return {"error": True, "message": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"error": True, "message": str(e)}
 
     def get_repliz_accounts(self):
         """Returns list of connected Repliz accounts for UI selection."""

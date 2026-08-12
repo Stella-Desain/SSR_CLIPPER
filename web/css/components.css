@@ -411,8 +411,11 @@
   font-size: 12px;
   color: rgba(255,255,255,0.7);
   overflow-y: auto;
-  min-height: 100px;
+  min-height: 120px;
+  max-height: 220px;
   line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 /* ═══════════════════════════════════════

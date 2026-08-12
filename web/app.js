@@ -104,18 +104,26 @@ function setProviderType(type, applyBaseUrl) {
 }
 
 function setSelectOptions(select, models, preferred) {
+  if (!select) return;
   select.innerHTML = '';
+  
+  function shortName(m) {
+    if (!m) return '';
+    const parts = m.split('/');
+    return parts[parts.length - 1] || m;
+  }
+
   if (!models || models.length === 0) {
     const opt = document.createElement('option');
     opt.value = preferred || '';
-    opt.textContent = preferred || 'No models';
+    opt.textContent = preferred ? shortName(preferred) : 'No models';
     select.appendChild(opt);
     return;
   }
   models.forEach(m => {
     const opt = document.createElement('option');
     opt.value = m;
-    opt.textContent = m;
+    opt.textContent = shortName(m);
     select.appendChild(opt);
   });
   if (preferred && models.includes(preferred)) {
@@ -172,13 +180,93 @@ function updateStepStatus(status) {
   }
 }
 
+// ── Terminal State ──
+let termDotInterval = null;   // animated dots timer
+let termDotCount = 0;
+let termErrorLines = [];      // accumulated error strings
+let termCurrentLine = null;   // DOM span for current status
+let termErrorBlock = null;    // DOM div for error section
+let termLastStatus = '';      // track last status to detect new lines
+
+function termInit() {
+  termErrorLines = [];
+  termCurrentLine = null;
+  termErrorBlock = null;
+  termLastStatus = '';
+  homeView.fields.terminal.innerHTML = '';
+
+  // Current-status line
+  termCurrentLine = document.createElement('span');
+  termCurrentLine.style.color = 'rgba(255,255,255,0.85)';
+  homeView.fields.terminal.appendChild(termCurrentLine);
+
+  termStartDots('Processing running');
+}
+
+function termStartDots(prefix) {
+  if (termDotInterval) clearInterval(termDotInterval);
+  termDotCount = 0;
+  termDotInterval = setInterval(() => {
+    termDotCount = (termDotCount % 3) + 1;
+    if (termCurrentLine) {
+      termCurrentLine.textContent = prefix + '.'.repeat(termDotCount);
+    }
+  }, 400);
+}
+
+function termStopDots() {
+  if (termDotInterval) {
+    clearInterval(termDotInterval);
+    termDotInterval = null;
+  }
+}
+
+function termSetLine(text, color) {
+  termStopDots();
+  if (termCurrentLine) {
+    termCurrentLine.textContent = text;
+    termCurrentLine.style.color = color || 'rgba(255,255,255,0.85)';
+  }
+  homeView.fields.terminal.scrollTop = homeView.fields.terminal.scrollHeight;
+}
+
+function termAddError(errText) {
+  // Build error block if first error
+  if (!termErrorBlock) {
+    const divider = document.createElement('div');
+    divider.style.cssText = 'margin:10px 0 6px; border-top:1px solid rgba(255,255,255,0.15); padding-top:8px; color:rgba(255,100,100,0.8); font-size:11px;';
+    divider.textContent = '──────────────────────── Error Log ────────────────────────';
+    homeView.fields.terminal.appendChild(divider);
+
+    termErrorBlock = document.createElement('div');
+    termErrorBlock.style.cssText = 'color: rgba(255,100,100,0.9); font-size:11px; white-space:pre-wrap; word-break:break-all; margin-top:4px;';
+    homeView.fields.terminal.appendChild(termErrorBlock);
+  }
+  termErrorLines.push(errText);
+  termErrorBlock.textContent = termErrorLines.join('\n');
+  homeView.fields.terminal.scrollTop = homeView.fields.terminal.scrollHeight;
+}
+
+function termFinish(isError) {
+  termStopDots();
+  if (isError) {
+    if (homeView.fields.termLabel) homeView.fields.termLabel.textContent = 'Error';
+    termCurrentLine.style.color = 'rgba(255,100,100,0.9)';
+  } else {
+    if (homeView.fields.termLabel) homeView.fields.termLabel.textContent = 'Done';
+    termCurrentLine.style.color = '#a3ff33';
+  }
+}
+
+// ── Processing Controls ─────────────────────────────────────────
 async function start() {
   const url = homeView.fields.url.value.trim();
   if (!url) return;
   lockControls(true);
+  if (homeView.fields.termLabel) homeView.fields.termLabel.textContent = 'Running';
   homeView.fields.status.textContent = 'Starting...';
-  homeView.fields.terminal.textContent = 'Starting clip creation...\n';
   homeView.fields.bar.style.width = '0%';
+  termInit();
 
   try {
     const res = await window.pywebview.api.start_processing(
@@ -196,10 +284,14 @@ async function start() {
       polling = setInterval(poll, 500);
     } else {
       homeView.fields.status.textContent = 'Busy - another process is running';
+      termSetLine('Another process is already running.', 'rgba(255,200,50,0.9)');
+      if (homeView.fields.termLabel) homeView.fields.termLabel.textContent = 'Busy';
       lockControls(false);
     }
   } catch (e) {
     homeView.fields.status.textContent = 'Error: ' + e;
+    termAddError(String(e));
+    termFinish(true);
     lockControls(false);
   }
 }
@@ -208,21 +300,57 @@ async function poll() {
   try {
     const p = await window.pywebview.api.get_progress();
     const pr = Math.max(0, Math.min(1, p.progress || 0));
+    const status = p.status || '';
     homeView.fields.bar.style.width = (pr * 100).toFixed(1) + '%';
-    homeView.fields.status.textContent = p.status || '';
-    homeView.fields.terminal.textContent += (p.status || '') + '\n';
-    homeView.fields.terminal.scrollTop = homeView.fields.terminal.scrollHeight;
+    homeView.fields.status.textContent = status;
 
-    updateStepStatus(p.status);
+    if (status !== termLastStatus) {
+      termLastStatus = status;
+      const sl = status.toLowerCase();
 
-    if (p.status && (p.status.startsWith('error') || p.status === 'complete')) {
+      if (sl.startsWith('error')) {
+        // Error: push to error block, stop dots
+        termSetLine(status, 'rgba(255,100,100,0.9)');
+        termAddError(status);
+      } else if (
+        sl.includes('download') ||
+        sl.includes('mb/') ||
+        sl.includes('kb/') ||
+        sl.includes('gb/')
+      ) {
+        // Download progress — replace current line, no dots
+        termStopDots();
+        termSetLine(status);
+        if (homeView.fields.termLabel) homeView.fields.termLabel.textContent = 'Downloading';
+      } else if (sl === 'complete' || sl === 'running' || sl === '') {
+        // Generic running state — animated dots
+        if (!termDotInterval) termStartDots('Processing running');
+      } else {
+        // Any other descriptive status (highlight, editing…) — show as-is, replace
+        termStopDots();
+        termSetLine(status);
+      }
+    } else if (
+      // Keep refreshing download lines even if status string changed only in bytes
+      (status.toLowerCase().includes('mb/') ||
+       status.toLowerCase().includes('kb/') ||
+       status.toLowerCase().includes('gb/'))
+    ) {
+      termSetLine(status);
+    }
+
+    updateStepStatus(status);
+
+    if (status && (status.startsWith('error') || status === 'complete')) {
       clearInterval(polling);
       polling = null;
+      termFinish(status.startsWith('error'));
       lockControls(false);
     }
   } catch {
     clearInterval(polling);
     polling = null;
+    termFinish(true);
     lockControls(false);
   }
 }
@@ -230,14 +358,12 @@ async function poll() {
 homeView.fields.start.addEventListener('click', start);
 
 // ── Terminal Copy Button ──
-const copyTermBtn = homeView.element.querySelector('.btn-ghost');
-if (copyTermBtn) {
-  copyTermBtn.addEventListener('click', () => {
+if (homeView.fields.termCopyBtn) {
+  homeView.fields.termCopyBtn.addEventListener('click', () => {
     const text = homeView.fields.terminal.textContent || '';
     navigator.clipboard.writeText(text).then(() => {
-      const orig = copyTermBtn.textContent;
-      copyTermBtn.textContent = 'Copied!';
-      setTimeout(() => { copyTermBtn.textContent = orig; }, 1500);
+      homeView.fields.termCopyBtn.textContent = 'Copied!';
+      setTimeout(() => { homeView.fields.termCopyBtn.textContent = 'Copy'; }, 1500);
     }).catch(() => {});
   });
 }
@@ -364,29 +490,67 @@ async function validateAndLoad(kind) {
   kind.status.style.color = 'var(--text-muted)';
   const modelsRes = await window.pywebview.api.get_models(baseUrl, apiKey);
   const models = (modelsRes && modelsRes.models) || [];
-  if (kind.model) setSelectOptions(kind.model, models, kind.model.value);
-  kind.status.textContent = models.length ? '✓ Valid' : '✓ Valid, no models';
+  if (kind.modelSelect) {
+    const preferred = kind.modelSelect.value;
+    setSelectOptions(kind.modelSelect, models, preferred);
+    if (kind.homeSelect) {
+      setSelectOptions(kind.homeSelect, models, preferred);
+    }
+  }
+  kind.status.textContent = models.length ? `✓ Valid, ${models.length} models loaded` : '✓ Valid, no models';
   kind.status.style.color = 'var(--success)';
+  // Automatically save after loading models to ensure they persist
+  if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
 }
+
+// ── Setup Provider Field Mappings ──
+function getProviders() {
+  return {
+    openai: { url: aiView.fields.openaiUrl, key: aiView.fields.openaiKey, status: aiView.fields.openaiStatus },
+    anthropic: { url: aiView.fields.anthropicUrl, key: aiView.fields.anthropicKey, status: aiView.fields.anthropicStatus },
+    gemini: { url: aiView.fields.geminiUrl, key: aiView.fields.geminiKey, status: aiView.fields.geminiStatus },
+    custom: { url: aiView.fields.cpUrl, key: aiView.fields.cpKey, status: aiView.fields.cpValidateStatus }
+  };
+}
+
+// ── Setup Home Select Synchronization ──
+function syncHomeSelect(homeSel, aiSel) {
+  if (!homeSel || !aiSel) return;
+  homeSel.addEventListener('change', () => {
+    aiSel.value = homeSel.value;
+    if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
+  });
+  aiSel.addEventListener('change', () => {
+    homeSel.value = aiSel.value;
+    if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
+  });
+}
+syncHomeSelect(homeView.fields.highlightSub, aiView.fields.hfModel);
+syncHomeSelect(homeView.fields.captionSub, aiView.fields.cmModel);
+syncHomeSelect(homeView.fields.hookSub, aiView.fields.hmModel);
+syncHomeSelect(homeView.fields.ytTitleSub, aiView.fields.ytModel);
 
 aiView.fields.hfValidateBtn.addEventListener('click', () => validateAndLoad({
   url: aiView.fields.hfUrl,
   key: aiView.fields.hfKey,
-  model: aiView.fields.hfModel,
+  modelSelect: aiView.fields.hfModel,
+  homeSelect: homeView.fields.highlightSub,
   status: aiView.fields.hfValidateStatus
 }));
 
 aiView.fields.cmValidateBtn.addEventListener('click', () => validateAndLoad({
   url: aiView.fields.cmUrl,
   key: aiView.fields.cmKey,
-  model: aiView.fields.cmModel,
+  modelSelect: aiView.fields.cmModel,
+  homeSelect: homeView.fields.captionSub,
   status: aiView.fields.cmValidateStatus
 }));
 
 aiView.fields.hmValidateBtn.addEventListener('click', () => validateAndLoad({
   url: aiView.fields.hmUrl,
   key: aiView.fields.hmKey,
-  model: aiView.fields.hmModel,
+  modelSelect: aiView.fields.hmModel,
+  homeSelect: homeView.fields.hookSub,
   status: aiView.fields.hmValidateStatus
 }));
 
@@ -394,7 +558,8 @@ if (aiView.fields.cpValidateBtn) {
   aiView.fields.cpValidateBtn.addEventListener('click', () => validateAndLoad({
     url: aiView.fields.cpUrl,
     key: aiView.fields.cpKey,
-    model: null,
+    modelSelect: aiView.fields.ytModel,
+    homeSelect: homeView.fields.ytTitleSub,
     status: aiView.fields.cpValidateStatus
   }));
 }
@@ -489,6 +654,12 @@ async function init() {
     if (aiView.fields.whisperModel && ai.whisper_model) aiView.fields.whisperModel.value = ai.whisper_model;
     if (aiView.fields.replizAccessKey) aiView.fields.replizAccessKey.value = rep.access_key || '';
     if (aiView.fields.replizSecretKey) aiView.fields.replizSecretKey.value = rep.secret_key || '';
+
+    // Update feature toggle sub-labels in homeView with the loaded model
+    setSelectOptions(homeView.fields.highlightSub, [hf.model].filter(Boolean), hf.model || '');
+    setSelectOptions(homeView.fields.captionSub, [cm.model].filter(Boolean), cm.model || '');
+    setSelectOptions(homeView.fields.hookSub, [hm.model].filter(Boolean), hm.model || '');
+    setSelectOptions(homeView.fields.ytTitleSub, [yt.model].filter(Boolean), yt.model || '');
     
     // Load Watermark Settings
     const wm = await window.pywebview.api.get_watermark_settings();
