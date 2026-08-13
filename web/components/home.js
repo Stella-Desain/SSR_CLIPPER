@@ -124,18 +124,20 @@ window.Components.HomeView = function () {
   toggles.appendChild(titleToggle.element);
   configBody.appendChild(toggles);
 
-  // Clips select
+  // Clips input
   const clipsLabel = document.createElement('label');
   clipsLabel.className = 'field-label';
   clipsLabel.style.cssText = 'display:block;margin-top:10px;margin-bottom:6px;';
   clipsLabel.textContent = 'Number of Clips';
   configBody.appendChild(clipsLabel);
-  const clipsSelect = document.createElement('select');
-  clipsSelect.className = 'input';
-  clipsSelect.id = 'clips';
-  clipsSelect.style.marginBottom = '10px';
-  clipsSelect.innerHTML = '<option value="3">3</option><option value="5" selected>5</option><option value="8">8</option>';
-  configBody.appendChild(clipsSelect);
+  const clipsInput = document.createElement('input');
+  clipsInput.type = 'number';
+  clipsInput.min = '1';
+  clipsInput.value = '5';
+  clipsInput.className = 'input';
+  clipsInput.id = 'clips';
+  clipsInput.style.marginBottom = '10px';
+  configBody.appendChild(clipsInput);
 
   // Subtitle select
   const subtitleLabel = document.createElement('label');
@@ -325,7 +327,7 @@ window.Components.HomeView = function () {
       try {
         const config = await window.pywebview.api.get_default_config();
         if (config) {
-          if (config.num_clips !== undefined) clipsSelect.value = config.num_clips;
+          if (config.num_clips !== undefined) clipsInput.value = config.num_clips;
           if (config.portrait !== undefined) portraitToggle.input.checked = config.portrait;
           if (config.highlight_finder !== undefined) highlightToggle.input.checked = config.highlight_finder;
           if (config.add_captions !== undefined) captionToggle.input.checked = config.add_captions;
@@ -339,7 +341,7 @@ window.Components.HomeView = function () {
 
   saveConfigBtn.addEventListener('click', async () => {
     const settings = {
-      num_clips: parseInt(clipsSelect.value, 10),
+      num_clips: parseInt(clipsInput.value, 10),
       portrait: portraitToggle.input.checked,
       highlight_finder: highlightToggle.input.checked,
       add_captions: captionToggle.input.checked,
@@ -363,7 +365,7 @@ window.Components.HomeView = function () {
     fields: {
       url: urlInput,
       start: startBtn,
-      clips: clipsSelect,
+      clips: clipsInput,
       subtitle: subtitleSelect,
       portrait: portraitToggle.input,
       highlight: highlightToggle.input,
