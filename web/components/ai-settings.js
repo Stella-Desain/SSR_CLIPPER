@@ -248,7 +248,7 @@ window.Components.AiSettingsView = function () {
   
   const connectMoreDiv = document.createElement('div');
   connectMoreDiv.style.cssText = 'position:absolute;bottom:0;left:0;right:0;padding:12px 16px;background:linear-gradient(to top, #111810 55%, transparent);';
-  connectMoreDiv.innerHTML = '<button class="btn btn-lime-full" style="font-weight:600;font-size:13px;" onclick="window.pywebview.api.open_url(\'https://dashboard.repliz.com\')">Connect More</button>';
+  connectMoreDiv.innerHTML = '<button class="btn btn-lime-full" style="font-weight:600;font-size:13px;" onclick="window.open(\'https://dashboard.repliz.com\', \'_blank\')">Connect More</button>';
   accountsPanel.appendChild(connectMoreDiv);
   repliz.appendChild(accountsPanel);
 
@@ -865,6 +865,7 @@ window.Components.AiSettingsView = function () {
       replizTestBtn: replizTestBtn,
       replizStatus: replizStatus,
       accountsTitle: accountsTitle,
+      accountsList: accountsList,
       wmEnableCheck: wmEnableCheck,
       wmImagePath: wmImagePath,
       wmPosX: wmPosX.input,

@@ -287,45 +287,93 @@ class WebAPI:
         return "https://dashboard.repliz.com"
 
     def get_account_stats(self):
-        """Returns statistics of connected social accounts."""
+        """Returns statistics of connected social accounts, broken down by platform."""
         try:
             cfg = self._get_cfg()
             repliz_cfg = cfg.get("repliz", {})
             access_key = repliz_cfg.get("access_key")
             secret_key = repliz_cfg.get("secret_key")
-            
+
             if not access_key or not secret_key:
                 return {"error": True, "message": "Keys not configured"}
-                
+
             import requests
             from requests.auth import HTTPBasicAuth
             url = "https://api.repliz.com/public/account"
-            params = {"page": 1, "limit": 10}
-            
+            params = {"page": 1, "limit": 50}
+
             response = requests.get(
-                url, 
+                url,
                 params=params,
                 auth=HTTPBasicAuth(access_key, secret_key),
                 timeout=10
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
-                total = data.get("totalDocs", 0)
-                return {"campaigns": total, "error": False}
+                docs = data.get("docs", [])
+                total = data.get("totalDocs", len(docs))
+                tiktok_count = sum(1 for a in docs if a.get("type") == "tiktok")
+                youtube_count = sum(1 for a in docs if a.get("type") == "youtube")
+                instagram_count = sum(1 for a in docs if a.get("type") == "instagram")
+                return {
+                    "campaigns": total,
+                    "tiktok_count": tiktok_count,
+                    "youtube_count": youtube_count,
+                    "instagram_count": instagram_count,
+                    "error": False
+                }
             else:
                 return {"error": True, "message": f"HTTP {response.status_code}"}
         except Exception as e:
             return {"error": True, "message": str(e)}
 
     def get_repliz_accounts(self):
-        """Returns list of connected Repliz accounts for UI selection."""
-        # TODO: Repliz API haven't provided official endpoints yet
-        return {"status": "error", "message": "TODO: API Endpoint Repliz belum ada"}
+        """Returns list of connected Repliz accounts for UI selection (upload account picker)."""
+        try:
+            cfg = self._get_cfg()
+            repliz_cfg = cfg.get("repliz", {})
+            access_key = repliz_cfg.get("access_key")
+            secret_key = repliz_cfg.get("secret_key")
+
+            if not access_key or not secret_key:
+                return {"status": "error", "message": "Repliz keys not configured"}
+
+            import requests
+            from requests.auth import HTTPBasicAuth
+            url = "https://api.repliz.com/public/account"
+            params = {"page": 1, "limit": 50}
+
+            response = requests.get(
+                url,
+                params=params,
+                auth=HTTPBasicAuth(access_key, secret_key),
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                docs = data.get("docs", [])
+                accounts = [
+                    {
+                        "_id": a.get("_id"),
+                        "name": a.get("name"),
+                        "type": a.get("type"),
+                        "isConnected": a.get("isConnected", True)
+                    }
+                    for a in docs
+                ]
+                return {"status": "ok", "accounts": accounts}
+            else:
+                return {"status": "error", "message": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def get_campaigns(self):
-        # TODO: Repliz API hasn't provided official endpoints yet
-        return {"error": True, "message": "TODO: API Endpoint Repliz belum ada"}
+        """Repliz public API has no campaigns endpoint yet. Return an empty list
+        (not an error object) so the frontend's `campaigns.length` check works
+        correctly and the Campaigns Tree just renders empty instead of breaking."""
+        return []
 
     def get_app_config(self):
         """Returns safe global config properties for UI"""
@@ -824,8 +872,9 @@ class WebAPI:
         self.job_history = [j for j in self.job_history if j.get("id") != job_id]
         return {"status": "ok"}
 
-    def upload_clip(self, clip_path, platform, **kwargs):
+    def upload_clip(self, clip_path, platform, options=None):
         """Upload clip to the specified platform."""
+        kwargs = options or {}
         cfg_mgr = self._get_cfg_manager()
         
         if platform == "tiktok":

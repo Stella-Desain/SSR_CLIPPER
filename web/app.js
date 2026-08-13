@@ -651,9 +651,28 @@ async function loadReplizData() {
         const stats = await window.pywebview.api.get_account_stats();
         if (stats.error) {
              aiView.fields.accountsTitle.textContent = 'Failed to load accounts';
+             if (aiView.fields.accountsList) aiView.fields.accountsList.innerHTML = '';
              return;
         }
         aiView.fields.accountsTitle.textContent = `${stats.campaigns} Account Connected`;
+
+        if (aiView.fields.accountsList) {
+            aiView.fields.accountsList.innerHTML = '';
+            const res = await window.pywebview.api.get_repliz_accounts();
+            if (res && res.status === 'ok' && res.accounts.length > 0) {
+                res.accounts.forEach(acc => {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#1A231A;border-radius:6px;';
+                    row.innerHTML = `
+                        <span style="font-size:13px;color:#E4E4E7;">${acc.name}</span>
+                        <span style="font-size:11px;color:#A1A1AA;text-transform:capitalize;">${acc.type}</span>
+                    `;
+                    aiView.fields.accountsList.appendChild(row);
+                });
+            } else {
+                aiView.fields.accountsList.innerHTML = '<div style="font-size:12px;color:#71717A;padding:8px 0;">No accounts connected yet.</div>';
+            }
+        }
     } catch (e) {
         if (aiView.fields.accountsTitle) aiView.fields.accountsTitle.textContent = 'Error loading accounts';
     }
