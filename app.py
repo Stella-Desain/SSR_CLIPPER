@@ -755,53 +755,116 @@ class WebAPI:
         cfg = cfg_mgr.get_all() if hasattr(cfg_mgr, "get_all") else cfg_mgr.config
         return cfg.get("default_clip_settings", {})
 
-    def get_stock_clips(self):
-        """Returns a list of generated clips from the output directory."""
+    def get_video_folders(self):
+        """Returns list of video folders (jobs) for the Jobs panel.
+        A 'video folder' = direct child of output_dir that has its own data.json
+        containing a 'url' key (this is the marker that separates the new
+        video-level data.json from the old per-clip data.json format)."""
+        folders = []
+        out_dir = Path(self.output_dir)
+
+        if out_dir.exists():
+            for child in out_dir.iterdir():
+                if not child.is_dir():
+                    continue
+                meta_file = child / "data.json"
+                if not meta_file.exists():
+                    continue
+                try:
+                    with open(meta_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                except Exception:
+                    continue
+                if "url" not in data:
+                    # Bukan folder video baru (kemungkinan folder clip lama/legacy), skip
+                    continue
+                clip_count = len(list(child.glob("*/*.mp4")))
+                folders.append({
+                    "id": child.name,
+                    "title": data.get("title", child.name),
+                    "clip_count": clip_count,
+                    "date": data.get("created_at", ""),
+                    "path": str(child),
+                })
+
+        folders.sort(key=lambda f: f.get("date", ""), reverse=True)
+        return folders
+
+    def get_stock_clips(self, folder_id=None):
+        """Returns a list of clips. If folder_id is given, only returns clips
+        inside that video folder. Otherwise returns clips from ALL video folders."""
         clips = []
         out_dir = Path(self.output_dir)
-        
-        if out_dir.exists():
-            # Find all JSON metadata files
-            for json_file in out_dir.rglob("data.json"):
+
+        if not out_dir.exists():
+            return clips
+
+        if folder_id:
+            target_folders = [out_dir / folder_id]
+        else:
+            target_folders = [c for c in out_dir.iterdir() if c.is_dir()]
+
+        for video_folder in target_folders:
+            if not video_folder.exists() or not video_folder.is_dir():
+                continue
+
+            video_meta_file = video_folder / "data.json"
+            video_title = video_folder.name
+            is_new_format = False
+
+            if video_meta_file.exists():
                 try:
-                    with open(json_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        
-                    folder_path = json_file.parent
-                    video_title = data.get("title", "Unknown Video")
-                    
-                    # Look for clip metadata
-                    clip_meta = data.get("clips", [])
-                    if not clip_meta:
-                        # Maybe legacy format, scan for mp4s
-                        mp4s = list(folder_path.glob("*.mp4"))
-                        for i, mp4 in enumerate(mp4s):
-                            stat = mp4.stat()
-                            clips.append({
-                                "id": f"clip_{mp4.stem}",
-                                "title": f"Clip {i+1} - {video_title}",
-                                "date": stat.st_mtime * 1000,
-                                "duration": "00:00", # Need ffprobe to get real duration, mock for now
-                                "path": str(mp4),
-                                "thumbnail": "", # Could generate a thumbnail here
-                            })
-                    else:
-                        for c in clip_meta:
-                            # Verify MP4 exists
-                            mp4_path = folder_path / f"clip_{c.get('id', '')}.mp4"
-                            if mp4_path.exists():
-                                stat = mp4_path.stat()
-                                clips.append({
-                                    "id": c.get("id", ""),
-                                    "title": c.get("hook_text", video_title),
-                                    "date": stat.st_mtime * 1000,
-                                    "duration": f"00:{int(c.get('duration', 0)):02d}",
-                                    "path": str(mp4_path),
-                                })
+                    with open(video_meta_file, 'r', encoding='utf-8') as f:
+                        vdata = json.load(f)
+                    if "url" in vdata:
+                        video_title = vdata.get("title", video_title)
+                        is_new_format = True
                 except Exception as e:
-                    print(f"Error parsing {json_file}: {e}")
-                    
-        # Sort by newest first
+                    print(f"Error parsing {video_meta_file}: {e}")
+
+            if is_new_format:
+                # Struktur baru: tiap clip ada di subfolder video_folder/<timestamp>/
+                for clip_json in video_folder.glob("*/data.json"):
+                    try:
+                        with open(clip_json, 'r', encoding='utf-8') as f:
+                            cdata = json.load(f)
+                        mp4s = list(clip_json.parent.glob("*.mp4"))
+                        if not mp4s:
+                            continue
+                        mp4_path = mp4s[0]
+                        stat = mp4_path.stat()
+                        duration_sec = int(cdata.get("duration_seconds", 0))
+                        clips.append({
+                            "id": clip_json.parent.name,
+                            "title": cdata.get("hook_text", cdata.get("title", video_title)),
+                            "video_title": video_title,
+                            "date": stat.st_mtime * 1000,
+                            "duration": f"{duration_sec // 60:02d}:{duration_sec % 60:02d}",
+                            "path": str(mp4_path),
+                        })
+                    except Exception as e:
+                        print(f"Error parsing {clip_json}: {e}")
+            else:
+                # Struktur lama (legacy): folder ini SENDIRI adalah 1 clip
+                try:
+                    if video_meta_file.exists():
+                        with open(video_meta_file, 'r', encoding='utf-8') as f:
+                            cdata = json.load(f)
+                        mp4s = list(video_folder.glob("*.mp4"))
+                        if mp4s:
+                            mp4_path = mp4s[0]
+                            stat = mp4_path.stat()
+                            clips.append({
+                                "id": video_folder.name,
+                                "title": cdata.get("title", "Unknown Clip"),
+                                "video_title": cdata.get("title", "Unknown Clip"),
+                                "date": stat.st_mtime * 1000,
+                                "duration": "00:00",
+                                "path": str(mp4_path),
+                            })
+                except Exception as e:
+                    print(f"Error parsing legacy {video_meta_file}: {e}")
+
         clips.sort(key=lambda x: x.get("date", 0), reverse=True)
         return clips
         
@@ -871,6 +934,18 @@ class WebAPI:
         """Delete a job from job history."""
         self.job_history = [j for j in self.job_history if j.get("id") != job_id]
         return {"status": "ok"}
+
+    def delete_video_folder(self, folder_id):
+        """Delete an entire video folder (and every clip inside it)."""
+        try:
+            target = Path(self.output_dir) / folder_id
+            if target.exists() and target.is_dir():
+                import shutil
+                shutil.rmtree(str(target), ignore_errors=True)
+                return {"status": "ok"}
+            return {"status": "not_found"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def upload_clip(self, clip_path, platform, options=None):
         """Upload clip to the specified platform."""

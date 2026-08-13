@@ -17,7 +17,7 @@ from pathlib import Path
 from datetime import datetime
 from openai import OpenAI, APIError, APIConnectionError, RateLimitError, APIStatusError
 from utils.logger import debug_log
-from utils.helpers import get_deno_path, get_ffmpeg_path, is_ytdlp_module_available
+from utils.helpers import get_deno_path, get_ffmpeg_path, is_ytdlp_module_available, sanitize_folder_name
 
 # Setup Deno and FFmpeg in PATH before importing yt-dlp
 _deno_path = get_deno_path()
@@ -635,19 +635,47 @@ Transcript:
         if not highlights:
             raise Exception("No valid highlights found!")
         
-        # Step 3: Process each clip
+        # Step 3: Buat SATU folder untuk video ini, nama dari judul video
+        video_title = video_info.get("title", "Untitled Video") if video_info else "Untitled Video"
+        folder_name = sanitize_folder_name(video_title)
+        video_folder = self.output_dir / folder_name
+        suffix = 2
+        while video_folder.exists():
+            video_folder = self.output_dir / f"{folder_name}-{suffix}"
+            suffix += 1
+        video_folder.mkdir(parents=True, exist_ok=True)
+        
+        # Alihkan sementara output_dir ke folder video ini, supaya semua clip
+        # dari video ini kebuat DI DALAM folder video (bukan langsung di output/)
+        original_output_dir = self.output_dir
+        self.output_dir = video_folder
+        
+        # Step 4: Process each clip
         total_clips = len(highlights)
-        for i, highlight in enumerate(highlights, 1):
-            if self.is_cancelled():
-                return
-            self.process_clip(video_path, highlight, i, total_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait)
+        try:
+            for i, highlight in enumerate(highlights, 1):
+                if self.is_cancelled():
+                    return
+                self.process_clip(video_path, highlight, i, total_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait)
+        finally:
+            self.output_dir = original_output_dir
+        
+        # Step 5: Simpan metadata video (dipakai Jobs panel buat nampilin folder ini)
+        video_meta = {
+            "title": video_title,
+            "url": url,
+            "created_at": datetime.now().isoformat(),
+            "clip_count": total_clips,
+        }
+        with open(video_folder / "data.json", "w", encoding="utf-8") as f:
+            json.dump(video_meta, f, ensure_ascii=False, indent=2)
         
         # Cleanup
         self.set_progress("Cleaning up...", 0.95)
         self.cleanup()
         
         self.set_progress("Complete!", 1.0)
-        self.log(f"\n✅ Created {total_clips} clips in: {self.output_dir}")
+        self.log(f"\n✅ Created {total_clips} clips in: {video_folder}")
     
     def download_video(self, url: str) -> tuple:
         """Download video and subtitle with progress using yt-dlp module or executable"""

@@ -5,6 +5,9 @@ window.Components.StockClipView = function () {
   section.className = 'view entrance';
   section.dataset.view = 'stock-clip';
 
+  // Folder video yang lagi dipilih di Jobs panel. null = tampilkan semua ("All Video")
+  let selectedFolderId = null;
+
   // Page header
   const pageHeader = document.createElement('div');
   pageHeader.style.marginBottom = '28px';
@@ -15,7 +18,7 @@ window.Components.StockClipView = function () {
   const layout = document.createElement('div');
   layout.style.cssText = 'display:grid;grid-template-columns:4fr 8fr;gap:20px;min-height:calc(100vh - 240px);';
 
-  // ── Left: Jobs Panel ──
+  // ── Left: Jobs Panel (= daftar folder video) ──
   const jobsPanel = document.createElement('div');
   jobsPanel.className = 'card';
   jobsPanel.style.cssText = 'display:flex;flex-direction:column;max-height:700px;';
@@ -38,13 +41,9 @@ window.Components.StockClipView = function () {
   `;
   jobsBody.appendChild(filterRow);
 
-  // Jobs list
+  // Jobs list (video folders)
   const jobsList = document.createElement('div');
   jobsList.style.cssText = 'flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:8px;padding-bottom:8px;';
-
-  // File list will be populated in refresh()
-  const sampleJobs = [];
-
   jobsBody.appendChild(jobsList);
 
   // Create button
@@ -106,81 +105,84 @@ window.Components.StockClipView = function () {
   // Clips list
   const clipsBody = document.createElement('div');
   clipsBody.style.cssText = 'flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px;';
-
-  // File list will be populated in refresh()
-
   clipsPanel.appendChild(clipsBody);
 
   layout.appendChild(jobsPanel);
   layout.appendChild(clipsPanel);
   section.appendChild(layout);
-  
+
   async function refresh() {
     if (!window.pywebview || !window.pywebview.api) return;
     try {
       const stats = await window.pywebview.api.get_dashboard_stats();
-      
-      // Update Jobs panel
+      const folders = await window.pywebview.api.get_video_folders();
+      const foldersById = {};
+      folders.forEach(f => { foldersById[f.id] = f; });
+
+      // Kalau folder yang lagi dipilih ternyata sudah kehapus, reset ke "All"
+      if (selectedFolderId && !foldersById[selectedFolderId]) {
+        selectedFolderId = null;
+      }
+
+      // ── Update Jobs panel (list folder video) ──
       jobsList.innerHTML = '';
-      const allJobs = [];
-      if (stats.activeJobs && stats.activeJobs.length > 0) allJobs.push(...stats.activeJobs);
-      if (stats.recentJobs && stats.recentJobs.length > 0) allJobs.push(...stats.recentJobs.reverse());
-      
-      if (allJobs.length === 0) {
+      if (folders.length === 0) {
         jobsList.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-size:13px;">No jobs found.</div>';
       } else {
-        allJobs.forEach(j => {
+        folders.forEach(folder => {
           const item = window.FileItem.v2({
-            title: j.title || 'Unknown Job',
-            info1: j.status,
-            info2: '',
+            title: folder.title || 'Unknown Video',
+            info1: `${folder.clip_count} clip${folder.clip_count === 1 ? '' : 's'}`,
+            info2: folder.date ? new Date(folder.date).toLocaleDateString() : '',
             size: '',
             onDelete: async () => {
-              if (confirm('Delete this job history?')) {
-                const res = await window.pywebview.api.delete_job(j.id);
+              if (confirm('Delete this video and all its clips?')) {
+                const res = await window.pywebview.api.delete_video_folder(folder.id);
                 if (res && res.status === 'ok') refresh();
               }
             }
           });
-          const subEl = item.querySelector('.fi-sub');
-          if(subEl) {
-             subEl.innerHTML = `<span>${j.status}</span>`;
+
+          item.style.cursor = 'pointer';
+          if (selectedFolderId === folder.id) {
+            item.style.borderColor = '#8DC63F';
+            item.style.boxShadow = '0 0 0 1px #8DC63F';
           }
+          item.addEventListener('click', (e) => {
+            if (e.target.closest('.fi-btn-del') || e.target.closest('.fi-btn-edit2')) return;
+            selectedFolderId = (selectedFolderId === folder.id) ? null : folder.id;
+            refresh();
+          });
+
           jobsList.appendChild(item);
         });
       }
-      
-      // Update Clips panel
-      const filterSelect = section.querySelector('#stock-campaign-filter');
-      const currentFilter = filterSelect.value || 'all';
-      
-      let clips = await window.pywebview.api.get_stock_clips();
-      
-      // Get unique titles for campaigns
-      const uniqueTitles = [...new Set(clips.map(c => c.title))];
-      filterSelect.innerHTML = '<option value="all">Campaign: All</option>';
-      uniqueTitles.forEach(t => {
-         const opt = document.createElement('option');
-         opt.value = t;
-         opt.textContent = 'Campaign: ' + (t.length > 20 ? t.substring(0, 20) + '...' : t);
-         filterSelect.appendChild(opt);
-      });
-      filterSelect.value = uniqueTitles.includes(currentFilter) ? currentFilter : 'all';
-      filterSelect.onchange = () => refresh();
 
-      if (filterSelect.value !== 'all') {
-         clips = clips.filter(c => c.title === filterSelect.value);
-      }
-      
-      // Update clips count
+      // ── Sync Campaign dropdown dengan daftar folder video ──
+      const filterSelect = section.querySelector('#stock-campaign-filter');
+      filterSelect.innerHTML = '<option value="all">Campaign: All</option>';
+      folders.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = 'Campaign: ' + (f.title.length > 20 ? f.title.substring(0, 20) + '...' : f.title);
+        filterSelect.appendChild(opt);
+      });
+      filterSelect.value = selectedFolderId && foldersById[selectedFolderId] ? selectedFolderId : 'all';
+      filterSelect.onchange = () => {
+        selectedFolderId = filterSelect.value === 'all' ? null : filterSelect.value;
+        refresh();
+      };
+
+      // ── Update Clips panel ──
+      let clips = await window.pywebview.api.get_stock_clips(selectedFolderId);
+
       const countEl = section.querySelector('#stock-clips-count');
       if (countEl) countEl.textContent = `Clips: ${clips.length}`;
-      
-      // Update clips subheader
+
       const subTitleEl = section.querySelector('#clips-sub-title');
       const subCountEl = section.querySelector('#clips-sub-count');
       const subSizeEl = section.querySelector('#clips-sub-size');
-      if (subTitleEl) subTitleEl.textContent = filterSelect.value === 'all' ? 'All Video' : filterSelect.value;
+      if (subTitleEl) subTitleEl.textContent = selectedFolderId && foldersById[selectedFolderId] ? foldersById[selectedFolderId].title : 'All Video';
       if (subCountEl) subCountEl.textContent = `Clips: ${clips.length}`;
       if (subSizeEl) subSizeEl.textContent = `Size: ${stats.storageUsed}`;
 
@@ -188,7 +190,7 @@ window.Components.StockClipView = function () {
       const uploadAllBtn = section.querySelector('#upload-all-btn');
       const platformSelect = section.querySelector('#upload-platform');
       const accountSelect = section.querySelector('#upload-account');
-      
+
       platformSelect.addEventListener('change', async () => {
           if (platformSelect.value === 'repliz') {
               accountSelect.style.display = 'block';
@@ -213,26 +215,26 @@ window.Components.StockClipView = function () {
               accountSelect.style.display = 'none';
           }
       });
-      
+
       const newBtn = uploadAllBtn.cloneNode(true);
       uploadAllBtn.parentNode.replaceChild(newBtn, uploadAllBtn);
-      
+
       newBtn.addEventListener('click', async () => {
          if (clips.length === 0) return;
          const platform = platformSelect.value;
          const accountId = accountSelect.value;
-         
+
          if (platform === 'repliz' && !accountId) {
              alert('Please select a Repliz account first.');
              return;
          }
-         
+
          if (!confirm(`Upload ${clips.length} clips to ${platform}?`)) return;
-         
+
          let success = 0, fail = 0;
          newBtn.textContent = 'Uploading...';
          newBtn.disabled = true;
-         
+
          for (let c of clips) {
              try {
                 const res = await window.pywebview.api.upload_clip(c.path, platform, {title: c.title, account_id: accountId});
@@ -246,14 +248,14 @@ window.Components.StockClipView = function () {
                 fail++;
              }
          }
-         
+
          newBtn.textContent = 'Upload Semua';
          newBtn.disabled = false;
          alert(`Upload complete!\nSuccess: ${success}\nFailed: ${fail}`);
       });
 
       clipsBody.innerHTML = '';
-      
+
       if (clips.length === 0) {
         clipsBody.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-size:13px;">No clips found.</div>';
       } else {
@@ -273,12 +275,12 @@ window.Components.StockClipView = function () {
             onUpload: async () => {
               const platform = platformSelect.value;
               const accountId = accountSelect.value;
-              
+
               if (platform === 'repliz' && !accountId) {
                   alert('Please select a Repliz account first.');
                   return;
               }
-              
+
               if (confirm(`Upload this clip to ${platform}?`)) {
                   try {
                       const res = await window.pywebview.api.upload_clip(c.path, platform, {title: c.title, account_id: accountId});
@@ -293,7 +295,7 @@ window.Components.StockClipView = function () {
               }
             }
           });
-          
+
           const actionsDiv = clip.querySelector('.fi-actions');
           if (actionsDiv) {
               const folderBtn = document.createElement('button');
@@ -307,11 +309,11 @@ window.Components.StockClipView = function () {
               folderBtn.onclick = () => window.pywebview.api.open_output_folder();
               actionsDiv.appendChild(folderBtn);
           }
-          
+
           clipsBody.appendChild(clip);
         });
       }
-      
+
     } catch(e) {
       console.error("Failed to load stock clips", e);
     }
