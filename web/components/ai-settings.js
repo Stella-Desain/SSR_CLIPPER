@@ -125,61 +125,96 @@ window.Components.AiSettingsView = function () {
   apiGrid.appendChild(openai.element);
   apiGrid.appendChild(hfModel.element);
 
-  // Row 2: Anthropic + Caption Maker
-  const anthropic = makeApiField('Anthropic', '(Opsional) API Key');
-  const cmModel = makeApiField('Caption Maker', 'Large V3 Turbo', true);
-  apiGrid.appendChild(anthropic.element);
-  apiGrid.appendChild(cmModel.element);
-
-  // Row 3: Gemini + Hook Maker
+  // Row 2: Gemini + Caption Maker
   const gemini = makeApiField('Gemini', '(Opsional) API Key');
-  const hmModel = makeApiField('Hook Maker', 'Gemini 3.1 pro', true);
+  const cmModel = makeApiField('Caption Maker', 'Select Model', true);
   apiGrid.appendChild(gemini.element);
-  apiGrid.appendChild(hmModel.element);
-
-  // Row 4: Custom Provider + YT Title Maker
-  const customRow = document.createElement('div');
-  customRow.className = 'field-group';
-  customRow.style.cssText = 'grid-column:1;margin:0;gap:0;';
-
-  const customLbl = document.createElement('label');
-  customLbl.className = 'field-label';
-  customLbl.textContent = 'Custom Provider';
-  customRow.appendChild(customLbl);
-
-  const customInputRow = document.createElement('div');
-  customInputRow.style.cssText = 'display:flex;gap:8px;align-items:stretch;';
+  apiGrid.appendChild(cmModel.element);
 
   const FIELD_BG_C = '#EDEDE9';
   const INPUT_H_C = '40px';
 
-  const custEndpointInput = document.createElement('input');
-  custEndpointInput.className = 'input';
-  custEndpointInput.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;flex:1;height:${INPUT_H_C};font-size:14px;padding:0 12px;outline:none;`;
-  custEndpointInput.placeholder = '(Opsional) End Point';
+  // Row 3: Custom Provider 1 + Hook Maker
+  const custom1Row = document.createElement('div');
+  custom1Row.className = 'field-group';
+  custom1Row.style.cssText = 'grid-column:1;margin:0;gap:0;';
 
-  const custKeyInput = document.createElement('input');
-  custKeyInput.className = 'input';
-  custKeyInput.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;flex:1;height:${INPUT_H_C};font-size:14px;padding:0 12px;outline:none;`;
-  custKeyInput.placeholder = '(Opsional) API Key';
-  custKeyInput.type = 'password';
+  const custom1Lbl = document.createElement('label');
+  custom1Lbl.className = 'field-label';
+  custom1Lbl.textContent = 'Custom Provider 1';
+  custom1Row.appendChild(custom1Lbl);
 
-  const custTestBtn = document.createElement('button');
-  custTestBtn.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;padding:0 18px;font-weight:500;font-size:13px;cursor:pointer;height:${INPUT_H_C};white-space:nowrap;color:var(--text);font-family:inherit;flex-shrink:0;`;
-  custTestBtn.textContent = 'Test';
+  const custom1InputRow = document.createElement('div');
+  custom1InputRow.style.cssText = 'display:flex;gap:8px;align-items:stretch;';
 
-  customInputRow.appendChild(custEndpointInput);
-  customInputRow.appendChild(custKeyInput);
-  customInputRow.appendChild(custTestBtn);
-  customRow.appendChild(customInputRow);
+  const cust1EndpointInput = document.createElement('input');
+  cust1EndpointInput.className = 'input';
+  cust1EndpointInput.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;flex:1;height:${INPUT_H_C};font-size:14px;padding:0 12px;outline:none;`;
+  cust1EndpointInput.placeholder = '(Opsional) End Point';
+
+  const cust1KeyInput = document.createElement('input');
+  cust1KeyInput.className = 'input';
+  cust1KeyInput.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;flex:1;height:${INPUT_H_C};font-size:14px;padding:0 12px;outline:none;`;
+  cust1KeyInput.placeholder = '(Opsional) API Key';
+  cust1KeyInput.type = 'password';
+
+  const cust1TestBtn = document.createElement('button');
+  cust1TestBtn.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;padding:0 18px;font-weight:500;font-size:13px;cursor:pointer;height:${INPUT_H_C};white-space:nowrap;color:var(--text);font-family:inherit;flex-shrink:0;`;
+  cust1TestBtn.textContent = 'Test';
+
+  custom1InputRow.appendChild(cust1EndpointInput);
+  custom1InputRow.appendChild(cust1KeyInput);
+  custom1InputRow.appendChild(cust1TestBtn);
+  custom1Row.appendChild(custom1InputRow);
   
-  const custTestStatus = document.createElement('span');
-  custTestStatus.style.cssText = 'font-size:12px; margin-top:4px; min-height:16px; display:block;';
-  customRow.appendChild(custTestStatus);
+  const cust1TestStatus = document.createElement('span');
+  cust1TestStatus.style.cssText = 'font-size:12px; margin-top:4px; min-height:16px; display:block;';
+  custom1Row.appendChild(cust1TestStatus);
 
-  const ytTitle = makeApiField('YT Title Maker', 'Claude Sonnet 5', true);
+  const hmModel = makeApiField('Hook Maker', 'Select Model', true);
+  apiGrid.appendChild(custom1Row);
+  apiGrid.appendChild(hmModel.element);
 
-  apiGrid.appendChild(customRow);
+  // Row 4: Custom Provider 2 + YT Title Maker
+  const custom2Row = document.createElement('div');
+  custom2Row.className = 'field-group';
+  custom2Row.style.cssText = 'grid-column:1;margin:0;gap:0;';
+
+  const custom2Lbl = document.createElement('label');
+  custom2Lbl.className = 'field-label';
+  custom2Lbl.textContent = 'Custom Provider 2';
+  custom2Row.appendChild(custom2Lbl);
+
+  const custom2InputRow = document.createElement('div');
+  custom2InputRow.style.cssText = 'display:flex;gap:8px;align-items:stretch;';
+
+  const cust2EndpointInput = document.createElement('input');
+  cust2EndpointInput.className = 'input';
+  cust2EndpointInput.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;flex:1;height:${INPUT_H_C};font-size:14px;padding:0 12px;outline:none;`;
+  cust2EndpointInput.placeholder = '(Opsional) End Point';
+
+  const cust2KeyInput = document.createElement('input');
+  cust2KeyInput.className = 'input';
+  cust2KeyInput.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;flex:1;height:${INPUT_H_C};font-size:14px;padding:0 12px;outline:none;`;
+  cust2KeyInput.placeholder = '(Opsional) API Key';
+  cust2KeyInput.type = 'password';
+
+  const cust2TestBtn = document.createElement('button');
+  cust2TestBtn.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;padding:0 18px;font-weight:500;font-size:13px;cursor:pointer;height:${INPUT_H_C};white-space:nowrap;color:var(--text);font-family:inherit;flex-shrink:0;`;
+  cust2TestBtn.textContent = 'Test';
+
+  custom2InputRow.appendChild(cust2EndpointInput);
+  custom2InputRow.appendChild(cust2KeyInput);
+  custom2InputRow.appendChild(cust2TestBtn);
+  custom2Row.appendChild(custom2InputRow);
+  
+  const cust2TestStatus = document.createElement('span');
+  cust2TestStatus.style.cssText = 'font-size:12px; margin-top:4px; min-height:16px; display:block;';
+  custom2Row.appendChild(cust2TestStatus);
+
+  const ytTitle = makeApiField('YT Title Maker', 'Select Model', true);
+
+  apiGrid.appendChild(custom2Row);
   apiGrid.appendChild(ytTitle.element);
 
   apiBody.appendChild(apiGrid);
@@ -841,13 +876,13 @@ window.Components.AiSettingsView = function () {
       hfModel: hfModel.input,
       hfValidateBtn: openai.testBtn,
       hfValidateStatus: openai.status,
-      cmUrl: cmUrlInput,
+      cmUrl: cust1EndpointInput,
       cmUrlField: cmUrlField,
-      cmKey: anthropic.input,
+      cmKey: cust1KeyInput,
       cmEye: cmEye,
       cmModel: cmModel.input,
-      cmValidateBtn: anthropic.testBtn,
-      cmValidateStatus: anthropic.status,
+      cmValidateBtn: cust1TestBtn,
+      cmValidateStatus: cust1TestStatus,
       hmUrl: hmUrlInput,
       hmUrlField: hmUrlField,
       hmKey: gemini.input,
@@ -855,10 +890,10 @@ window.Components.AiSettingsView = function () {
       hmModel: hmModel.input,
       hmValidateBtn: gemini.testBtn,
       hmValidateStatus: gemini.status,
-      cpUrl: custEndpointInput,
-      cpKey: custKeyInput,
-      cpValidateBtn: custTestBtn,
-      cpValidateStatus: custTestStatus,
+      cpUrl: cust2EndpointInput,
+      cpKey: cust2KeyInput,
+      cpValidateBtn: cust2TestBtn,
+      cpValidateStatus: cust2TestStatus,
       ytModel: ytTitle.input,
       replizAccessKey: replizAccessKey,
       replizSecretKey: replizSecretKey,

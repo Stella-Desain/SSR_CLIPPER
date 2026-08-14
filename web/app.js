@@ -97,9 +97,8 @@ function setProviderType(type, applyBaseUrl) {
 
   if (applyBaseUrl && !showCustom) {
     const baseUrl = type === 'ytclip' ? 'https://ai-api.ytclip.org/v1' : 'https://api.openai.com/v1';
-    // Only update hfUrl — cmUrl (Anthropic) and hmUrl (Gemini) have their own fixed endpoints
+    // Only update hfUrl — hmUrl (Gemini) has its own fixed endpoint
     aiView.fields.hfUrl.value = baseUrl;
-    aiView.fields.cmUrl.value = 'https://api.anthropic.com/v1';
     aiView.fields.hmUrl.value = 'https://generativelanguage.googleapis.com/v1beta/openai/';
   }
 }
@@ -402,46 +401,71 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
   };
 
   const getSmartPayload = (defaultUrlField, defaultKeyField, modelField) => {
-      const model = modelField ? modelField.value.trim() : "";
-      const lowerModel = model.toLowerCase();
+      let model = modelField ? modelField.value.trim() : "";
       
-      // Auto-route to Gemini if it's a Gemini model AND the user provided a Gemini key
-      if (lowerModel.includes("gemini") && aiView.fields.hmKey && aiView.fields.hmKey.value.trim() !== "") {
-          return {
-              base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-              api_key: aiView.fields.hmKey.value.trim(),
-              model: model
-          };
+      let targetUrl = getUrl(defaultUrlField, 'https://api.openai.com/v1');
+      let targetKey = getKey(defaultKeyField);
+      
+      if (model.startsWith("[OpenAI] ")) {
+          model = model.replace("[OpenAI] ", "");
+          targetUrl = aiView.fields.hfUrl ? aiView.fields.hfUrl.value.trim() : targetUrl;
+          targetKey = aiView.fields.hfKey ? aiView.fields.hfKey.value.trim() : targetKey;
+      } else if (model.startsWith("[Gemini] ")) {
+          model = model.replace("[Gemini] ", "");
+          targetUrl = aiView.fields.hmUrl ? aiView.fields.hmUrl.value.trim() : targetUrl;
+          targetKey = aiView.fields.hmKey ? aiView.fields.hmKey.value.trim() : targetKey;
+      } else if (model.startsWith("[Custom1] ")) {
+          model = model.replace("[Custom1] ", "");
+          targetUrl = aiView.fields.cmUrl ? aiView.fields.cmUrl.value.trim() : targetUrl;
+          targetKey = aiView.fields.cmKey ? aiView.fields.cmKey.value.trim() : targetKey;
+      } else if (model.startsWith("[Custom2] ")) {
+          model = model.replace("[Custom2] ", "");
+          targetUrl = aiView.fields.cpUrl ? aiView.fields.cpUrl.value.trim() : targetUrl;
+          targetKey = aiView.fields.cpKey ? aiView.fields.cpKey.value.trim() : targetKey;
+      } else if (model.startsWith("[Local] ")) {
+          model = model.replace("[Local] ", "");
+          // Keep targetUrl and targetKey unchanged so we don't corrupt the saved API credentials
+      } else {
+          // Backward compatibility: Auto-route to Gemini if it's a Gemini model AND no prefix
+          const lowerModel = model.toLowerCase();
+          if (lowerModel.includes("gemini") && aiView.fields.hmKey && aiView.fields.hmKey.value.trim() !== "") {
+              targetUrl = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+              targetKey = aiView.fields.hmKey.value.trim();
+          }
       }
       
-      // Auto-route to Anthropic if it's a Claude model AND the user provided an Anthropic key
-      if (lowerModel.includes("claude") && aiView.fields.cmKey && aiView.fields.cmKey.value.trim() !== "") {
-          return {
-              base_url: 'https://api.anthropic.com/v1',
-              api_key: aiView.fields.cmKey.value.trim(),
-              model: model
-          };
-      }
-      
-      // Default fallback
       return {
-          base_url: getUrl(defaultUrlField, 'https://api.openai.com/v1'),
-          api_key: getKey(defaultKeyField),
+          base_url: targetUrl,
+          api_key: targetKey,
           model: model
       };
   };
 
+  const captionMakerPayload = getSmartPayload(aiView.fields.cmUrl, aiView.fields.cmKey, aiView.fields.cmModel);
+  
+  // If the user selected a local whisper model in Caption Maker, map it to whisper_model
+  const localSizes = ['large-v3-turbo', 'large-v3', 'medium', 'small', 'base', 'tiny'];
+  let finalWhisperModel = aiView.fields.whisperModel ? aiView.fields.whisperModel.value : "api";
+  
+  if (localSizes.includes(captionMakerPayload.model)) {
+      finalWhisperModel = captionMakerPayload.model;
+      // Do not sync the header dropdown visually, because that dropdown is for installation picking only!
+  } else {
+      finalWhisperModel = "api";
+  }
+
   const payload = {
-    _provider_type: providerType,
+    _provider_type: "custom",
+    provider_type: "custom",
     highlight_finder: getSmartPayload(aiView.fields.hfUrl, aiView.fields.hfKey, aiView.fields.hfModel),
-    caption_maker: getSmartPayload(aiView.fields.cmUrl, aiView.fields.cmKey, aiView.fields.cmModel),
+    caption_maker: captionMakerPayload,
     hook_maker: getSmartPayload(aiView.fields.hmUrl, aiView.fields.hmKey, aiView.fields.hmModel),
     custom_provider: {
       base_url: cpUrl,
       api_key: cpKey
     },
     yt_title_maker: getSmartPayload(null, null, aiView.fields.ytModel),
-    whisper_model: aiView.fields.whisperModel ? aiView.fields.whisperModel.value : "large-v3-turbo",
+    whisper_model: finalWhisperModel,
     repliz: {
       access_key: aiView.fields.replizAccessKey ? aiView.fields.replizAccessKey.value.trim() : "",
       secret_key: aiView.fields.replizSecretKey ? aiView.fields.replizSecretKey.value.trim() : ""
@@ -507,63 +531,111 @@ aiView.fields.providerButtons.forEach(btn => {
 
 // ── Validate & Load Models ──
 async function validateAndLoad(kind) {
-  const baseUrl = kind.url.value.trim();
-  const apiKey = kind.key.value.trim();
-  kind.status.textContent = 'Validating...';
-  const res = await window.pywebview.api.validate_api_key(baseUrl, apiKey);
-  if (!res || res.status !== 'ok') {
-    kind.status.textContent = res && res.message ? res.message : 'Invalid';
-    kind.status.style.color = 'var(--error)';
-    return;
-  }
-  kind.status.textContent = 'Loading models...';
+  const baseUrl = kind.url ? kind.url.value.trim() : "";
+  const apiKey = kind.key ? kind.key.value.trim() : "";
+  kind.status.textContent = 'Testing connection...';
   kind.status.style.color = 'var(--text-muted)';
-  const modelsRes = await window.pywebview.api.get_models(baseUrl, apiKey);
-  const models = (modelsRes && modelsRes.models) || [];
   
-  if (models.length > 0) {
-    // isTTS: model dedicated untuk Text-to-Speech
-    const isTTS = (m) => m.toLowerCase().includes('tts') || m.toLowerCase().endsWith('-tts');
-    // isSTT: model dedicated untuk Speech-to-Text / transcription
-    const isSTT = (m) => {
-        const lower = m.toLowerCase();
-        return lower.includes('whisper') || lower.includes('stt') || lower.endsWith('-audio') || lower.includes('gemini-3');
-    };
-    // Chat = semua yang bukan TTS dan bukan STT (tapi Gemini 3 bisa keduanya, jadi chat juga)
-    const isChat = (m) => !isTTS(m) && (!isSTT(m) || m.toLowerCase().includes('gemini-3'));
+  try {
+      // 1. Fetch models from ALL configured providers
+      let allModels = [];
+      const providers = [
+          { name: 'OpenAI', url: aiView.fields.hfUrl, key: aiView.fields.hfKey },
+          { name: 'Gemini', url: aiView.fields.hmUrl, key: aiView.fields.hmKey },
+          { name: 'Custom1', url: aiView.fields.cmUrl, key: aiView.fields.cmKey },
+          { name: 'Custom2', url: aiView.fields.cpUrl, key: aiView.fields.cpKey }
+      ];
+      
+      // Add local models
+      allModels.push('[Local] large-v3-turbo');
+      allModels.push('[Local] large-v3');
+      allModels.push('[Local] medium');
+      allModels.push('[Local] small');
+      allModels.push('[Local] base');
+      allModels.push('[Local] tiny');
+      
+      let clickedValid = false;
+      
+      for (const p of providers) {
+          if (p.url && p.url.value && p.key && p.key.value) {
+              try {
+                  const pRes = await window.pywebview.api.get_models(p.url.value.trim(), p.key.value.trim());
+                  if (pRes && pRes.models && pRes.models.length > 0) {
+                      allModels = allModels.concat(pRes.models.map(m => `[${p.name}] ${m}`));
+                      if (baseUrl === p.url.value.trim() && apiKey === p.key.value.trim()) {
+                          clickedValid = true;
+                      }
+                  }
+              } catch (e) {}
+          }
+      }
+      
+      if (!clickedValid && allModels.length === 0) {
+          kind.status.textContent = '❌ Invalid key or no models found';
+          kind.status.style.color = 'var(--error)';
+          return;
+      }
+      
+      kind.status.textContent = clickedValid ? `✓ Valid, models loaded` : '✓ (Other keys loaded)';
+      kind.status.style.color = 'var(--success)';
+      
+      // Categorize models based on strict rules
+      const isTTS = (m) => {
+          const lower = m.toLowerCase();
+          return lower.includes('tts') || lower.endsWith('-tts');
+      };
+      
+      const isSTT = (m) => {
+          const lower = m.toLowerCase();
+          return lower.includes('whisper') || lower.includes('stt') || lower.endsWith('-audio') || lower.includes('gemini-3') || m.startsWith('[Local]');
+      };
+      
+      const isChat = (m) => {
+          // Local models are strictly STT (Whisper)
+          if (m.startsWith('[Local]')) return false;
+          
+          const lower = m.toLowerCase();
+          // Gemini 3 can do both chat and STT, but not TTS
+          if (lower.includes('gemini-3')) return !isTTS(m);
+          
+          // Default: if it's not explicitly TTS or STT, it's a Text/Chat model
+          return !isTTS(m) && !isSTT(m);
+      };
 
-    const hfModels = models.filter(isChat);
-    const cmModels = models.filter(isSTT);
-    const hmModels = models.filter(isTTS);
-    const ytModels = models.filter(isChat);
+      const hfModels = allModels.filter(isChat);
+      const cmModels = allModels.filter(isSTT);
+      const hmModels = allModels.filter(isTTS);
+      const ytModels = allModels.filter(isChat);
 
-    if (aiView.fields.hfModel) {
-      const pref = aiView.fields.hfModel.value;
-      setSelectOptions(aiView.fields.hfModel, hfModels, pref);
-      if (homeView.fields.highlightSub) setSelectOptions(homeView.fields.highlightSub, hfModels, pref);
-    }
-    if (aiView.fields.cmModel) {
-      const pref = aiView.fields.cmModel.value;
-      setSelectOptions(aiView.fields.cmModel, cmModels, pref);
-      if (homeView.fields.captionSub) setSelectOptions(homeView.fields.captionSub, cmModels, pref);
-    }
-    if (aiView.fields.hmModel) {
-      const pref = aiView.fields.hmModel.value;
-      setSelectOptions(aiView.fields.hmModel, hmModels, pref);
-      if (homeView.fields.hookSub) setSelectOptions(homeView.fields.hookSub, hmModels, pref);
-    }
-    if (aiView.fields.ytModel) {
-      const pref = aiView.fields.ytModel.value;
-      setSelectOptions(aiView.fields.ytModel, ytModels, pref);
-      if (homeView.fields.ytTitleSub) setSelectOptions(homeView.fields.ytTitleSub, ytModels, pref);
-    }
+      if (aiView.fields.hfModel) {
+        const pref = aiView.fields.hfModel.value;
+        setSelectOptions(aiView.fields.hfModel, hfModels, pref);
+        if (homeView.fields.highlightSub) setSelectOptions(homeView.fields.highlightSub, hfModels, pref);
+      }
+      if (aiView.fields.cmModel) {
+        const pref = aiView.fields.cmModel.value;
+        setSelectOptions(aiView.fields.cmModel, cmModels, pref);
+        if (homeView.fields.captionSub) setSelectOptions(homeView.fields.captionSub, cmModels, pref);
+      }
+      if (aiView.fields.hmModel) {
+        const pref = aiView.fields.hmModel.value;
+        setSelectOptions(aiView.fields.hmModel, hmModels, pref);
+        if (homeView.fields.hookSub) setSelectOptions(homeView.fields.hookSub, hmModels, pref);
+      }
+      if (aiView.fields.ytModel) {
+        const pref = aiView.fields.ytModel.value;
+        setSelectOptions(aiView.fields.ytModel, ytModels, pref);
+        if (homeView.fields.ytTitleSub) setSelectOptions(homeView.fields.ytTitleSub, ytModels, pref);
+      }
+      
+      if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
+      
+  } catch(e) {
+      kind.status.textContent = '❌ Error: ' + e;
+      kind.status.style.color = 'var(--error)';
   }
-
-  kind.status.textContent = models.length ? `✓ Valid, ${models.length} models loaded` : '✓ Valid, no models';
-  kind.status.style.color = 'var(--success)';
-  // Automatically save after loading models to ensure they persist
-  if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
 }
+
 
 // ── Setup Provider Field Mappings ──
 function getProviders() {
@@ -601,7 +673,7 @@ aiView.fields.hfValidateBtn.addEventListener('click', () => validateAndLoad({
 }));
 
 aiView.fields.cmValidateBtn.addEventListener('click', () => validateAndLoad({
-  url: { value: 'https://api.anthropic.com/v1' },
+  url: aiView.fields.cmUrl,
   key: aiView.fields.cmKey,
   modelSelect: aiView.fields.cmModel,
   homeSelect: homeView.fields.captionSub,
@@ -719,7 +791,7 @@ async function init() {
     if (aiView.fields.hfUrl) aiView.fields.hfUrl.value = hf.base_url || '';
     if (aiView.fields.hfKey) aiView.fields.hfKey.value = hf.api_key || '';
     if (aiView.fields.hfModel) setSelectOptions(aiView.fields.hfModel, [hf.model].filter(Boolean), hf.model || '');
-    if (aiView.fields.cmUrl) aiView.fields.cmUrl.value = (cm.base_url && cm.base_url !== 'https://api.openai.com/v1') ? cm.base_url : 'https://api.anthropic.com/v1';
+    if (aiView.fields.cmUrl) aiView.fields.cmUrl.value = cm.base_url || '';
     if (aiView.fields.cmKey) aiView.fields.cmKey.value = cm.api_key || '';
     if (aiView.fields.cmModel) setSelectOptions(aiView.fields.cmModel, [cm.model].filter(Boolean), cm.model || '');
     if (aiView.fields.hmUrl) aiView.fields.hmUrl.value = (hm.base_url && hm.base_url !== 'https://api.openai.com/v1') ? hm.base_url : 'https://generativelanguage.googleapis.com/v1beta/openai/';
@@ -732,7 +804,7 @@ async function init() {
     if (aiView.fields.cpUrl) aiView.fields.cpUrl.value = cp.base_url || '';
     if (aiView.fields.cpKey) aiView.fields.cpKey.value = cp.api_key || '';
     if (aiView.fields.ytModel) setSelectOptions(aiView.fields.ytModel, [yt.model].filter(Boolean), yt.model || '');
-    if (aiView.fields.whisperModel && ai.whisper_model) aiView.fields.whisperModel.value = ai.whisper_model;
+    // Removed: if (aiView.fields.whisperModel && ai.whisper_model) aiView.fields.whisperModel.value = ai.whisper_model;
     if (aiView.fields.replizAccessKey) aiView.fields.replizAccessKey.value = rep.access_key || '';
     if (aiView.fields.replizSecretKey) aiView.fields.replizSecretKey.value = rep.secret_key || '';
 

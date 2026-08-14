@@ -1,0 +1,121 @@
+From 8e69f28372c64cdaac3b6fbddae61bc263d48dc4 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.local>
+Date: Fri, 14 Aug 2026 12:13:07 +0000
+Subject: [PATCH] fix: surface caption/subtitle generation failures instead of
+ silently skipping
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Previously, any failure in the Whisper caption pipeline (audio extraction
+failure, empty/tiny audio, Whisper API or Local Whisper transcription
+error, or a transcription that succeeded but returned no words/segments)
+was caught, logged as a soft warning, and the original clip was copied
+to the output path without captions. process_clip() only checked that
+the output file existed, so this looked like a successful run with
+'✓ Added captions' in the log — but the final video had no subtitles
+and no visible error anywhere.
+
+- clipper_core.py: add_captions_api_with_progress() now raises on
+  audio extraction failure, missing/empty audio, and Whisper errors,
+  and explicitly rejects a transcript with no words AND no segments.
+  These exceptions propagate up through process_clip() -> process()
+  and are caught by app.py's _run(), which already sets
+  self.status = f'error: {e}' so the UI can show what happened.
+
+- app.py: fixed local Whisper settings key mismatch. _run() was
+  building local_whisper_settings with key 'model', but
+  AutoClipperCore._load_local_whisper() reads 'model_size'. This meant
+  a user's selected local Whisper model (e.g. 'medium') was silently
+  ignored and the app always loaded 'large-v3-turbo' instead.
+---
+ app.py          |  6 +++++-
+ clipper_core.py | 37 ++++++++++++++++++++++++-------------
+ 2 files changed, 29 insertions(+), 14 deletions(-)
+
+diff --git a/app.py b/app.py
+index c3b4d24..ba597e0 100644
+--- a/app.py
++++ b/app.py
+@@ -205,7 +205,11 @@ class WebAPI:
+         whisper_model_name = ai_providers.get("whisper_model", "api")
+         local_whisper_settings = {
+             "enabled": whisper_model_name != "api",
+-            "model": whisper_model_name if whisper_model_name != "api" else None
++            # NOTE: key must be "model_size" — AutoClipperCore._load_local_whisper()
++            # reads settings.get("model_size", ...). It used to be "model" here,
++            # which meant the user's chosen local Whisper model (e.g. "medium")
++            # was silently ignored and always fell back to "large-v3-turbo".
++            "model_size": whisper_model_name if whisper_model_name != "api" else "large-v3-turbo"
+         }
+ 
+         core = AutoClipperCore(
+diff --git a/clipper_core.py b/clipper_core.py
+index 37c41cb..d1e3d4b 100644
+--- a/clipper_core.py
++++ b/clipper_core.py
+@@ -4802,22 +4802,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+         result = subprocess.run(cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
+         
+         if result.returncode != 0:
+-            self.log(f"  Warning: Audio extraction failed")
+-            import shutil
+-            shutil.copy(input_path, output_path)
+-            return
++            self.log(f"  ❌ Audio extraction failed, cannot generate captions")
++            self.log(f"  FFmpeg stderr: {result.stderr[-500:] if result.stderr else 'none'}")
++            if os.path.exists(audio_file):
++                os.unlink(audio_file)
++            raise Exception(f"Audio extraction for captions failed: {result.stderr[-300:] if result.stderr else 'unknown FFmpeg error'}")
+         
+         if progress_callback:
+             progress_callback(0.2)
+         
+         # Check if audio file exists
+         if not os.path.exists(audio_file) or os.path.getsize(audio_file) < 1000:
+-            self.log(f"  Warning: Audio file too small or missing")
+-            import shutil
+-            shutil.copy(input_path, output_path)
++            self.log(f"  ❌ Audio file too small or missing, cannot generate captions")
+             if os.path.exists(audio_file):
+                 os.unlink(audio_file)
+-            return
++            raise Exception("Extracted audio file is missing or too small — source clip may have no audio track")
+         
+         # Get audio duration for token reporting
+         probe_cmd = [self.ffmpeg_path, "-i", audio_file, "-f", "null", "-"]
+@@ -4836,14 +4835,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+         try:
+             transcript = self._whisper_transcribe_words(audio_file)
+         except Exception as e:
+-            self.log(f"  Warning: Whisper error: {e}")
+-            import shutil
+-            shutil.copy(input_path, output_path)
+-            os.unlink(audio_file)
+-            return
++            self.log(f"  ❌ Whisper transcription failed, cannot generate captions: {e}")
++            if os.path.exists(audio_file):
++                os.unlink(audio_file)
++            raise Exception(f"Whisper transcription failed: {e}")
+         
+         os.unlink(audio_file)
+         
++        # Guard against a "successful" transcription that returned nothing —
++        # this used to silently produce a video with an empty subtitle track
++        # (no error, no captions, no warning visible anywhere).
++        has_words = bool(getattr(transcript, "words", None))
++        has_segments = bool(getattr(transcript, "segments", None))
++        if not has_words and not has_segments:
++            self.log(f"  ❌ Whisper returned no words or segments, cannot generate captions")
++            raise Exception(
++                "Whisper transcription succeeded but returned empty text "
++                "(no words/segments) — check the source audio and the Caption Maker "
++                "provider/model configuration"
++            )
++        
+         if progress_callback:
+             progress_callback(0.5)
+         
+-- 
+2.43.0
+
