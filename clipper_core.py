@@ -4802,22 +4802,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         result = subprocess.run(cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
         
         if result.returncode != 0:
-            self.log(f"  Warning: Audio extraction failed")
-            import shutil
-            shutil.copy(input_path, output_path)
-            return
+            self.log(f"  ❌ Audio extraction failed, cannot generate captions")
+            self.log(f"  FFmpeg stderr: {result.stderr[-500:] if result.stderr else 'none'}")
+            if os.path.exists(audio_file):
+                os.unlink(audio_file)
+            raise Exception(f"Audio extraction for captions failed: {result.stderr[-300:] if result.stderr else 'unknown FFmpeg error'}")
         
         if progress_callback:
             progress_callback(0.2)
         
         # Check if audio file exists
         if not os.path.exists(audio_file) or os.path.getsize(audio_file) < 1000:
-            self.log(f"  Warning: Audio file too small or missing")
-            import shutil
-            shutil.copy(input_path, output_path)
+            self.log(f"  ❌ Audio file too small or missing, cannot generate captions")
             if os.path.exists(audio_file):
                 os.unlink(audio_file)
-            return
+            raise Exception("Extracted audio file is missing or too small — source clip may have no audio track")
         
         # Get audio duration for token reporting
         probe_cmd = [self.ffmpeg_path, "-i", audio_file, "-f", "null", "-"]
@@ -4836,13 +4835,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         try:
             transcript = self._whisper_transcribe_words(audio_file)
         except Exception as e:
-            self.log(f"  Warning: Whisper error: {e}")
-            import shutil
-            shutil.copy(input_path, output_path)
-            os.unlink(audio_file)
-            return
+            self.log(f"  ❌ Whisper transcription failed, cannot generate captions: {e}")
+            if os.path.exists(audio_file):
+                os.unlink(audio_file)
+            raise Exception(f"Whisper transcription failed: {e}")
         
         os.unlink(audio_file)
+        
+        # Guard against a "successful" transcription that returned nothing —
+        # this used to silently produce a video with an empty subtitle track
+        # (no error, no captions, no warning visible anywhere).
+        has_words = bool(getattr(transcript, "words", None))
+        has_segments = bool(getattr(transcript, "segments", None))
+        if not has_words and not has_segments:
+            self.log(f"  ❌ Whisper returned no words or segments, cannot generate captions")
+            raise Exception(
+                "Whisper transcription succeeded but returned empty text "
+                "(no words/segments) — check the source audio and the Caption Maker "
+                "provider/model configuration"
+            )
         
         if progress_callback:
             progress_callback(0.5)

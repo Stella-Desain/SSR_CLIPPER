@@ -205,7 +205,11 @@ class WebAPI:
         whisper_model_name = ai_providers.get("whisper_model", "api")
         local_whisper_settings = {
             "enabled": whisper_model_name != "api",
-            "model": whisper_model_name if whisper_model_name != "api" else None
+            # NOTE: key must be "model_size" — AutoClipperCore._load_local_whisper()
+            # reads settings.get("model_size", ...). It used to be "model" here,
+            # which meant the user's chosen local Whisper model (e.g. "medium")
+            # was silently ignored and always fell back to "large-v3-turbo".
+            "model_size": whisper_model_name if whisper_model_name != "api" else "large-v3-turbo"
         }
 
         core = AutoClipperCore(
