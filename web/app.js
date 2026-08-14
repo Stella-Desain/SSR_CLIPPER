@@ -376,9 +376,22 @@ if (installBtn) {
     installBtn.textContent = 'Installing...';
     try {
       await window.pywebview.api.install_dependencies();
-      installBtn.textContent = 'Installing (bg)';
-      setTimeout(() => { installBtn.disabled = false; installBtn.textContent = 'Install All'; }, 5000);
-    } catch {
+      installBtn.textContent = 'Installing (bg)...';
+
+      const maxAttempts = 40; // 40 x 3s = 2 menit
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        await loadDepStatus();
+        const deps = await window.pywebview.api.check_dependencies();
+        const allOk = deps.ffmpeg && deps.deno && deps.whisper && deps.ytdlp;
+        if (allOk || attempts >= maxAttempts) {
+          clearInterval(poll);
+          installBtn.disabled = false;
+          installBtn.textContent = 'Install All';
+        }
+      }, 3000);
+    } catch(e) {
       installBtn.textContent = 'Error';
       installBtn.disabled = false;
     }
@@ -570,36 +583,55 @@ async function validateAndLoad(kind) {
           }
       }
       
-      if (!clickedValid && allModels.length === 0) {
+      const ownKeyEmpty = !apiKey;
+      
+      if (ownKeyEmpty) {
+          if (allModels.length > 0) {
+              kind.status.textContent = 'ℹ Field ini kosong — pakai model dari provider lain';
+              kind.status.style.color = 'var(--text-muted)';
+          } else {
+              kind.status.textContent = '❌ Isi API key dulu';
+              kind.status.style.color = 'var(--error)';
+          }
+      } else if (!clickedValid && allModels.length === 0) {
           kind.status.textContent = '❌ Invalid key or no models found';
           kind.status.style.color = 'var(--error)';
           return;
+      } else {
+          kind.status.textContent = clickedValid ? '✓ Valid, models loaded' : '✓ (Other keys loaded)';
+          kind.status.style.color = 'var(--success)';
       }
       
-      kind.status.textContent = clickedValid ? `✓ Valid, models loaded` : '✓ (Other keys loaded)';
-      kind.status.style.color = 'var(--success)';
-      
       // Categorize models based on strict rules
+      // Daftar model Gemini yang BENERAN audio-capable (sinkron dengan comment di app.py get_models())
+      // NOTE: Jika backend nambah model Gemini audio-capable baru, tambahkan ke list ini!
+      const GEMINI_AUDIO_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'];
+      
       const isTTS = (m) => {
           const lower = m.toLowerCase();
           return lower.includes('tts') || lower.endsWith('-tts');
       };
       
       const isSTT = (m) => {
+          if (m.startsWith('[Local]')) return true;
           const lower = m.toLowerCase();
-          return lower.includes('whisper') || lower.includes('stt') || lower.endsWith('-audio') || lower.includes('gemini-3') || m.startsWith('[Local]');
+          if (lower.includes('whisper') || lower.includes('stt') || lower.endsWith('-audio')) return true;
+          // Gemini: hanya model yang secara eksplisit audio-capable DAN bukan TTS
+          const bareName = m.replace(/^\[[^\]]+\]\s*/, ''); // buang prefix "[Custom1] " dll
+          if (GEMINI_AUDIO_MODELS.includes(bareName) && !isTTS(m)) return true;
+          return false;
       };
       
       const isChat = (m) => {
-          // Local models are strictly STT (Whisper)
           if (m.startsWith('[Local]')) return false;
-          
+          if (isTTS(m)) return false;
+          // Gemini audio-capable model tetap bisa dipakai chat juga, tapi model non-gemini-3
+          // yang sudah kena isSTT (whisper/stt/-audio) TIDAK boleh dianggap chat
           const lower = m.toLowerCase();
-          // Gemini 3 can do both chat and STT, but not TTS
-          if (lower.includes('gemini-3')) return !isTTS(m);
-          
-          // Default: if it's not explicitly TTS or STT, it's a Text/Chat model
-          return !isTTS(m) && !isSTT(m);
+          if ((lower.includes('whisper') || lower.includes('stt') || lower.endsWith('-audio')) && !lower.includes('gemini')) {
+              return false;
+          }
+          return true;
       };
 
       const hfModels = allModels.filter(isChat);
@@ -638,14 +670,6 @@ async function validateAndLoad(kind) {
 
 
 // ── Setup Provider Field Mappings ──
-function getProviders() {
-  return {
-    openai: { url: aiView.fields.openaiUrl, key: aiView.fields.openaiKey, status: aiView.fields.openaiStatus },
-    anthropic: { url: aiView.fields.anthropicUrl, key: aiView.fields.anthropicKey, status: aiView.fields.anthropicStatus },
-    gemini: { url: aiView.fields.geminiUrl, key: aiView.fields.geminiKey, status: aiView.fields.geminiStatus },
-    custom: { url: aiView.fields.cpUrl, key: aiView.fields.cpKey, status: aiView.fields.cpValidateStatus }
-  };
-}
 
 // ── Setup Home Select Synchronization ──
 function syncHomeSelect(homeSel, aiSel) {
@@ -714,6 +738,92 @@ if (aiView.fields.reloadModelBtn) {
           Reload Model
         `;
     });
+}
+
+// ── Test Model Readiness ──
+function resolveModelPayloadForTest(modelField) {
+  // Mirror logic dari getSmartPayload: prefix di value option nentuin base_url/key asli
+  let model = modelField ? modelField.value.trim() : "";
+  let targetUrl = "";
+  let targetKey = "";
+  let modelType = 'chat';
+
+  if (model.startsWith("[OpenAI] ")) {
+      model = model.replace("[OpenAI] ", "");
+      targetUrl = aiView.fields.hfUrl ? aiView.fields.hfUrl.value.trim() : "";
+      targetKey = aiView.fields.hfKey ? aiView.fields.hfKey.value.trim() : "";
+  } else if (model.startsWith("[Gemini] ")) {
+      model = model.replace("[Gemini] ", "");
+      targetUrl = aiView.fields.hmUrl ? aiView.fields.hmUrl.value.trim() : "";
+      targetKey = aiView.fields.hmKey ? aiView.fields.hmKey.value.trim() : "";
+  } else if (model.startsWith("[Custom1] ")) {
+      model = model.replace("[Custom1] ", "");
+      targetUrl = aiView.fields.cmUrl ? aiView.fields.cmUrl.value.trim() : "";
+      targetKey = aiView.fields.cmKey ? aiView.fields.cmKey.value.trim() : "";
+  } else if (model.startsWith("[Custom2] ")) {
+      model = model.replace("[Custom2] ", "");
+      targetUrl = aiView.fields.cpUrl ? aiView.fields.cpUrl.value.trim() : "";
+      targetKey = aiView.fields.cpKey ? aiView.fields.cpKey.value.trim() : "";
+  } else if (model.startsWith("[Local] ")) {
+      model = model.replace("[Local] ", "");
+      modelType = 'local';
+      return { base_url: "", api_key: "", model, model_type: modelType };
+  }
+
+  // tentuin model_type berdasarkan nama model (pakai pola sama kayak isTTS/isSTT di validateAndLoad)
+  const lower = model.toLowerCase();
+  if (lower.includes('tts') || lower.endsWith('-tts')) modelType = 'tts';
+  else if (lower.includes('whisper') || lower.includes('stt') || lower.endsWith('-audio')) modelType = 'stt';
+  else modelType = 'chat';
+
+  return { base_url: targetUrl, api_key: targetKey, model, model_type: modelType };
+}
+
+async function testModelReadiness(modelField, testBtn, statusSpan) {
+  if (!modelField || !modelField.value || modelField.value.startsWith('Select Model')) {
+      statusSpan.textContent = '❌ Pilih model dulu';
+      statusSpan.style.color = 'var(--error)';
+      return;
+  }
+  testBtn.disabled = true;
+  testBtn.textContent = '...';
+  statusSpan.textContent = 'Testing...';
+  statusSpan.style.color = 'var(--text-muted)';
+
+  try {
+      const payload = resolveModelPayloadForTest(modelField);
+      const res = await window.pywebview.api.test_model(payload.base_url, payload.api_key, payload.model, payload.model_type);
+      if (res && res.status === 'ok') {
+          statusSpan.textContent = '✅ Ready — ' + res.message;
+          statusSpan.style.color = 'var(--success)';
+      } else {
+          statusSpan.textContent = '❌ Not ready — ' + (res ? res.message : 'Unknown error');
+          statusSpan.style.color = 'var(--error)';
+      }
+  } catch (e) {
+      statusSpan.textContent = '❌ Error: ' + e;
+      statusSpan.style.color = 'var(--error)';
+  }
+
+  testBtn.disabled = false;
+  testBtn.textContent = 'Test';
+}
+
+if (aiView.fields.hfModelTestBtn) {
+  aiView.fields.hfModelTestBtn.addEventListener('click', () =>
+    testModelReadiness(aiView.fields.hfModel, aiView.fields.hfModelTestBtn, aiView.fields.hfModelStatus));
+}
+if (aiView.fields.cmModelTestBtn) {
+  aiView.fields.cmModelTestBtn.addEventListener('click', () =>
+    testModelReadiness(aiView.fields.cmModel, aiView.fields.cmModelTestBtn, aiView.fields.cmModelStatus));
+}
+if (aiView.fields.hmModelTestBtn) {
+  aiView.fields.hmModelTestBtn.addEventListener('click', () =>
+    testModelReadiness(aiView.fields.hmModel, aiView.fields.hmModelTestBtn, aiView.fields.hmModelStatus));
+}
+if (aiView.fields.ytModelTestBtn) {
+  aiView.fields.ytModelTestBtn.addEventListener('click', () =>
+    testModelReadiness(aiView.fields.ytModel, aiView.fields.ytModelTestBtn, aiView.fields.ytModelStatus));
 }
 
 async function loadReplizData() {
@@ -898,7 +1008,7 @@ async function loadDepStatus() {
     const deps = await window.pywebview.api.check_dependencies();
     const dots = aiView.element.querySelectorAll('.dep-dot');
     // Map: yt-dlp, ffmpeg, deno, whisper
-    const depMap = [deps.ffmpeg, deps.ffmpeg, deps.deno, deps.whisper];
+    const depMap = [deps.ytdlp, deps.ffmpeg, deps.deno, deps.whisper];
     dots.forEach((dot, i) => {
       const ok = depMap[i];
       dot.classList.toggle('err', !ok);

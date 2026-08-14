@@ -133,6 +133,51 @@ class WebAPI:
         except:
             return {"models": []}
 
+    def test_model(self, base_url, api_key, model, model_type):
+        """Test apakah model tertentu BENERAN bisa dipanggil, bukan cuma ada di daftar."""
+        if model_type == 'local':
+            try:
+                import faster_whisper  # noqa
+                return {"status": "ok", "message": "Local whisper library terpasang dan siap."}
+            except ImportError:
+                try:
+                    import whisper  # noqa
+                    return {"status": "ok", "message": "Local whisper library terpasang dan siap."}
+                except ImportError:
+                    return {"status": "error", "message": "Library whisper belum terinstall. Klik 'Install All' dulu."}
+
+        if not base_url or not api_key:
+            return {"status": "error", "message": "Base URL atau API key kosong, gak bisa ditest."}
+        if not model:
+            return {"status": "error", "message": "Belum ada model yang dipilih."}
+
+        headers = self._auth_headers(api_key)
+        url = base_url.rstrip("/")
+
+        try:
+            if model_type == 'chat':
+                endpoint = url if url.endswith("/chat/completions") else f"{url}/chat/completions"
+                resp = requests.post(endpoint, headers=headers, json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 1
+                }, timeout=15)
+                if resp.status_code == 200:
+                    return {"status": "ok", "message": "Model merespon normal, siap dipakai."}
+                return {"status": "error", "message": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+            else:
+                # stt / tts: gak ada format request ringan yang seragam antar provider.
+                # Fallback: pastikan model masih ada di daftar model terbaru provider.
+                models_resp = self.get_models(base_url, api_key)
+                available = models_resp.get("models", [])
+                if model in available:
+                    return {"status": "ok", "message": "Model terdaftar di provider (bukan full functional test, cuma verifikasi ketersediaan)."}
+                return {"status": "error", "message": "Model tidak ditemukan lagi di daftar provider ini — mungkin sudah deprecated."}
+        except requests.exceptions.Timeout:
+            return {"status": "error", "message": "Timeout — provider tidak merespon dalam 15 detik."}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     def save_ai_settings(self, settings):
         if not isinstance(settings, dict):
             return {"status": "error"}
@@ -272,7 +317,10 @@ class WebAPI:
     def reload_whisper_model(self):
         """Reloads the local whisper model."""
         try:
-            return {"status": "success", "message": "Whisper model will be reloaded on the next clip generation run."}
+            import faster_whisper  # noqa
+            return {"status": "success", "message": "Library whisper terdeteksi. Model akan dipakai ulang di run berikutnya."}
+        except ImportError:
+            return {"status": "error", "message": "Library whisper belum terinstall. Klik 'Install All' dulu."}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -923,12 +971,20 @@ class WebAPI:
                 whisper_ok = True
             except ImportError:
                 whisper_ok = False
+                
+        ytdlp_path = get_ytdlp_path()
+        ytdlp_ok = ytdlp_path is not None and ytdlp_path != ""
+        if ytdlp_path not in ("yt_dlp_module",):
+            # kalau bukan python module, pastikan path/command-nya beneran ada
+            import shutil as _shutil
+            ytdlp_ok = _shutil.which(ytdlp_path) is not None or Path(ytdlp_path).exists()
         
         return {
             "cookies": has_cookies,
             "ffmpeg": ffmpeg_ok,
             "deno": deno_ok,
-            "whisper": whisper_ok
+            "whisper": whisper_ok,
+            "ytdlp": ytdlp_ok
         }
 
     def delete_clip(self, clip_path):
