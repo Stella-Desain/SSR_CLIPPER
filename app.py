@@ -202,7 +202,7 @@ class WebAPI:
         model = cfg.get("model", "gpt-4.1")
         ai_providers = cfg.get("ai_providers", {})
         
-        whisper_model_name = ai_providers.get("whisper_model", "large-v3-turbo")
+        whisper_model_name = ai_providers.get("whisper_model", "api")
         local_whisper_settings = {
             "enabled": whisper_model_name != "api",
             "model": whisper_model_name if whisper_model_name != "api" else None
@@ -228,6 +228,21 @@ class WebAPI:
             log_callback=log_cb,
             progress_callback=lambda s, p=None: progress_cb(p if p is not None else 0.0),
         )
+
+        # NOTE: this was previously never called anywhere, so the "GPU
+        # Acceleration" toggle in Settings had zero effect on processing -
+        # every clip was always encoded on CPU (libx264) regardless of what
+        # the user selected. Every FFmpeg encode step in the pipeline
+        # (cut, portrait merge, hook, captions, watermark...) goes through
+        # get_video_encoder_args(), which only returns GPU args if this is
+        # called with enabled=True. GPUDetector's encoder settings target
+        # equivalent visual quality to the CPU CRF 18 default (cq 19 /
+        # global_quality 19 / qp 18-19, tuned per vendor), and any runtime
+        # GPU encoder failure already falls back to CPU automatically
+        # (see _run_ffmpeg_subprocess), so enabling it by default is safe.
+        gpu_cfg = cfg.get("gpu_acceleration", {})
+        core.enable_gpu_acceleration(bool(gpu_cfg.get("enabled", True)))
+
         try:
             self.status = "running"
             self.progress = 0.0
@@ -488,7 +503,7 @@ class WebAPI:
         gpu_cfg = cfg.get("gpu_acceleration", {})
         return {
             "face_tracking_mode": cfg.get("face_tracking_mode", "opencv"),
-            "gpu_enabled": gpu_cfg.get("enabled", False)
+            "gpu_enabled": gpu_cfg.get("enabled", True)
         }
 
     def save_face_tracking_settings(self, settings):
