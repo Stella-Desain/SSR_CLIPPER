@@ -1,5 +1,5 @@
 """
-Logging utilities for YT Short Clipper
+Logging utilities for SSR_CLIPPER
 """
 
 import sys

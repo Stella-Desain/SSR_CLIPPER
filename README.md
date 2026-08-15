@@ -1,7 +1,6 @@
-# YT-Short-Clipper
+# SSR_CLIPPER
 
-[![Discord](https://img.shields.io/badge/Join-Discord-5865F2?logo=discord&logoColor=white)](https://s.id/ytsdiscord)
-[![GitHub Stars](https://img.shields.io/github/stars/jipraks/yt-short-clipper?style=social)](https://github.com/jipraks/yt-short-clipper)
+[![GitHub Stars](https://img.shields.io/github/stars/Stella-Desain/SSR_CLIPPER?style=social)](https://github.com/Stella-Desain/SSR_CLIPPER)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)]()
 
@@ -19,8 +18,8 @@ Download the desktop app for your platform:
 
 | Platform | Download | Notes |
 |----------|----------|-------|
-| **Windows** | [Latest Release (.exe)](https://github.com/jipraks/yt-short-clipper/releases) | Windows 10+ |
-| **macOS** | [Latest Release (.dmg)](https://github.com/jipraks/yt-short-clipper/releases) | macOS Catalina+, Apple Silicon & Intel |
+| **Windows** | [Latest Release (.exe)](https://github.com/Stella-Desain/SSR_CLIPPER/releases) | Windows 10+ |
+| **macOS** | [Latest Release (.dmg)](https://github.com/Stella-Desain/SSR_CLIPPER/releases) | macOS Catalina+, Apple Silicon & Intel |
 
 Then follow the complete setup guide:
 
@@ -62,7 +61,7 @@ If you want to contribute or run from source:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        YT-Short-Clipper                         │
+│                        SSR_CLIPPER                         │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌──────────┐    ┌──────────────┐    ┌─────────────┐           │
@@ -153,7 +152,7 @@ See [GUIDE.md](GUIDE.md) or [PANDUAN.md](PANDUAN.md) for detailed API setup inst
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/jipraks/yt-short-clipper.git
+git clone https://github.com/Stella-Desain/SSR_CLIPPER.git
 cd yt-short-clipper
 ```
 
@@ -410,7 +409,7 @@ pip install -r requirements.txt
 pip install pyinstaller
 
 pyinstaller build.spec
-# Output: dist/YTShortClipper.exe
+# Output: dist/SSR_CLIPPER.exe
 ```
 
 ### macOS
@@ -426,17 +425,17 @@ python -m PyInstaller build_macos.spec --clean --noconfirm
 
 # Create DMG (optional)
 create-dmg \
-    --volname "YTShortClipper" \
+    --volname "SSR_CLIPPER" \
     --volicon "assets/icon.icns" \
     --window-size 600 400 \
-    --icon "YTShortClipper.app" 150 185 \
+    --icon "SSR_CLIPPER.app" 150 185 \
     --app-drop-link 450 185 \
-    "dist/YTShortClipper.dmg" \
-    "dist/YTShortClipper.app"
+    "dist/SSR_CLIPPER.dmg" \
+    "dist/SSR_CLIPPER.app"
 ```
 
 **macOS notes:**
-- User data is stored in `~/Library/Application Support/YTShortClipper/` (persists across app updates)
+- User data is stored in `~/Library/Application Support/SSR_CLIPPER/` (persists across app updates)
 - FFmpeg is auto-downloaded from [evermeet.cx](https://evermeet.cx/ffmpeg/) (x86_64, runs on Apple Silicon via Rosetta 2)
 - GPU acceleration uses VideoToolbox (hardware encoding on all Macs)
 - ffplay is not available on macOS; video preview requires system player
@@ -457,7 +456,7 @@ git clone https://github.com/YOUR-USERNAME/yt-short-clipper.git
 cd yt-short-clipper
 
 # 3. Add upstream remote
-git remote add upstream https://github.com/jipraks/yt-short-clipper.git
+git remote add upstream https://github.com/Stella-Desain/SSR_CLIPPER.git
 
 # 4. Create a new branch
 git checkout -b feature/your-new-feature
@@ -504,19 +503,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [MediaPipe](https://mediapipe.dev/) - Face & lip tracking
 - [FFmpeg](https://ffmpeg.org/) - Video processing
 - [OpenAI API](https://openai.com/) - GPT-4 and TTS
-
----
-
-## 👨‍💻 Credits
-
-Made with ☕ by **Aji Prakoso** for content creators
-
-| | |
-|---|---|
-| 🎓 | [n8n & Automation eCourse](https://classroom.jipraks.com) |
-| 📸 | [@jipraks on Instagram](https://instagram.com/jipraks) |
-| 🎬 | [Aji Prakoso on YouTube](https://youtube.com/@jipraks) |
-| 🌐 | [About Aji Prakoso](https://www.jipraks.com) |
-#   c l i p - v 2  
- #   c l i p - v 2  
- 

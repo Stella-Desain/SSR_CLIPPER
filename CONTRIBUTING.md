@@ -1,4 +1,4 @@
-# Contributing to YT-Short-Clipper
+# Contributing to SSR_CLIPPER
 
 Thank you for your interest in contributing! 🎉
 
@@ -119,7 +119,7 @@ Then add to GitHub:
 
 ### Step 1: Fork Repository
 
-1. Go to repo page: `https://github.com/jipraks/yt-short-clipper`
+1. Go to repo page: `https://github.com/Stella-Desain/SSR_CLIPPER`
 2. Click the **"Fork"** button in the top right
 3. Select your account as destination
 4. Wait for fork process to complete
@@ -136,15 +136,15 @@ git clone https://github.com/YOUR-USERNAME/yt-short-clipper.git
 cd yt-short-clipper
 
 # Add "upstream" remote (original repo)
-git remote add upstream https://github.com/jipraks/yt-short-clipper.git
+git remote add upstream https://github.com/Stella-Desain/SSR_CLIPPER.git
 
 # Verify remotes
 git remote -v
 # Output:
 # origin    https://github.com/YOUR-USERNAME/yt-short-clipper.git (fetch)
 # origin    https://github.com/YOUR-USERNAME/yt-short-clipper.git (push)
-# upstream  https://github.com/jipraks/yt-short-clipper.git (fetch)
-# upstream  https://github.com/jipraks/yt-short-clipper.git (push)
+# upstream  https://github.com/Stella-Desain/SSR_CLIPPER.git (fetch)
+# upstream  https://github.com/Stella-Desain/SSR_CLIPPER.git (push)
 ```
 
 ### Step 3: Sync with Upstream (Important!)

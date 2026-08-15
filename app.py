@@ -16,9 +16,6 @@ class ReplizUploaderAdapter:
         self.access_key = access_key
         self.secret_key = secret_key
     
-    from dialogs.repliz_upload import ReplizUploadDialog
-    upload_video_to_storage = ReplizUploadDialog.upload_video_to_storage
-    upload_to_repliz = ReplizUploadDialog.upload_to_repliz
 
 # Fix for PyInstaller windowed mode (console=False)
 if sys.stdout is None:
@@ -41,22 +38,7 @@ class WebAPI:
     def get_progress(self):
         return {"status": self.status, "progress": self.progress}
 
-    def get_asset_paths(self):
-        bundle_dir = get_bundle_dir()
-        icon_path = Path(bundle_dir) / "assets" / "icon.png"
-        return {"icon": str(icon_path)}
 
-    def get_icon_data(self):
-        try:
-            bundle_dir = get_bundle_dir()
-            icon_path = Path(bundle_dir) / "assets" / "icon.png"
-            if not icon_path.exists():
-                return {"data": ""}
-            raw = icon_path.read_bytes()
-            encoded = base64.b64encode(raw).decode("utf-8")
-            return {"data": f"data:image/png;base64,{encoded}"}
-        except:
-            return {"data": ""}
 
     def get_ai_settings(self):
         cfg = self._get_cfg()
@@ -66,26 +48,6 @@ class WebAPI:
         cfg = self._get_cfg()
         return {"provider_type": cfg.get("provider_type", "ytclip")}
 
-    def validate_api_key(self, base_url, api_key):
-        if not base_url:
-            return {"status": "error", "message": "Missing base URL"}
-        if not api_key:
-            return {"status": "error", "message": "Missing API key"}
-            
-        # Bypass direct HTTP check for Gemini and Anthropic as they may not support standard /models endpoint for validation
-        if "generativelanguage.googleapis.com" in base_url:
-            return {"status": "ok"}
-        if "api.anthropic.com" in base_url:
-            return {"status": "ok"}
-            
-        url = self._get_models_url(base_url)
-        try:
-            resp = requests.get(url, headers=self._auth_headers(api_key), timeout=10)
-            if resp.status_code == 200:
-                return {"status": "ok"}
-            return {"status": "error", "message": f"HTTP {resp.status_code}"}
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
 
     def get_models(self, base_url, api_key):
         if not base_url:
@@ -1039,10 +1001,6 @@ class WebAPI:
             print(f"Error deleting clip: {e}")
             return {"status": "error", "message": str(e)}
 
-    def delete_job(self, job_id):
-        """Delete a job from job history."""
-        self.job_history = [j for j in self.job_history if j.get("id") != job_id]
-        return {"status": "ok"}
 
     def delete_video_folder(self, folder_id):
         """Delete an entire video folder (and every clip inside it)."""
@@ -1182,7 +1140,7 @@ def main():
     
     # Configure pywebview window to match Figma designs (which is ~1440x900)
     window = webview.create_window(
-        "Clipper - YT Short Clipper", 
+        "Clipper - SSR_CLIPPER", 
         str(html_path), 
         js_api=api,
         width=1280, 

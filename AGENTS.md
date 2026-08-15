@@ -1,26 +1,27 @@
-# 🤖 AGENTS.md - AI Developer Guide for YT-Short-Clipper
+# 🤖 AGENTS.md - AI Developer Guide for SSR_CLIPPER
 
 ## 📌 Project Overview
-**YT-Short-Clipper** is a desktop application that automates the creation of short-form content (TikTok, Reels, Shorts) from long-form YouTube videos. It leverages AI (GPT-4, Whisper) for highlight detection and captioning, and Computer Vision (OpenCV) for smart cropping.
+**SSR_CLIPPER** is a desktop application that automates the creation of short-form content (TikTok, Reels, Shorts) from long-form YouTube videos. It leverages AI (GPT-4, Whisper) for highlight detection and captioning, and Computer Vision (OpenCV/MediaPipe) for smart cropping.
 
 ## 🏗️ Architecture & Tech Stack
 
-### core Technology
+### Core Technology
 - **Language**: Python 3.10+
-- **GUI Framework**: CustomTkinter
-- **Video Processing**: FFmpeg (via subprocess), OpenCV (for face detection)
+- **Desktop shell**: pywebview (native window wrapping a local web UI)
+- **Frontend**: Plain HTML/CSS/JS in `web/` (no framework, no build step)
+- **Video Processing**: FFmpeg (via subprocess), OpenCV (face detection), MediaPipe (speaker tracking)
 - **Downloading**: yt-dlp
-- **AI/ML**: 
-  - **LLM**: OpenAI API (GPT-4) or compatible providers (Groq, Gemini via `ai_provider_card.py`)
+- **AI/ML**:
+  - **LLM**: OpenAI-compatible API (GPT-4, Gemini, Groq, YTClip AI, etc. — see `config/ai_provider_config.py`)
   - **Transcription**: OpenAI Whisper API
   - **TTS**: OpenAI TTS (for hooks)
 
 ### High-Level Structure
-1. **Frontend (GUI)**:
-   - Entry point: `app.py` (Main `YTShortClipperApp` class).
-   - Pages: Located in `pages/` (e.g., `browse_page.py`, `settings_page.py`).
-   - Navigation: Managed by `YTShortClipperApp.show_page`.
-   - Threading: Heavy tasks (downloads, processing) run in background threads to keep UI responsive.
+1. **Entry point**: `app.py`
+   - `main()` creates a `pywebview` window that loads `web/index.html`.
+   - The `WebAPI` class in `app.py` is exposed to the frontend as `js_api=api`.
+   - The frontend (`web/app.js` and `web/components/*.js`) calls Python methods via `window.pywebview.api.<method_name>(...)`. There is **no separate REST server** — all Python↔JS communication goes through this bridge.
+   - There is no CustomTkinter GUI anymore — the old `pages/`, `dialogs/`, `components/` (CustomTkinter) and `app_tkinter_backup.py` have been removed as dead code.
 
 2. **Backend (Logic)**:
    - `clipper_core.py`: **The Brain**. Contains the `AutoClipperCore` class which orchestrates the entire pipeline:
@@ -30,7 +31,7 @@
      4. Video Processing (`process_clip`: cut -> portrait -> hook -> captions)
 
 3. **Data & Config**:
-   - `config.json`: Stores user settings (API keys, preferences). Managed by `ConfigManager`.
+   - `config.json`: Stores user settings (API keys, preferences). Managed by `ConfigManager` (`config/config_manager.py`).
    - `cookies.txt`: Required for YouTube authentication (handled by `COOKIES.md` guide).
    - `output/`: Generated clips and metadata (`data.json`).
 
@@ -38,32 +39,31 @@
 
 | Path | Description |
 |------|-------------|
-| **`app.py`** | Main application entry point. Handles window management, global state, and navigation. |
-| **`clipper_core.py`** | Core business logic. Contains all video processing and AI interaction code. |
-| **`pages/`** | GUI Page classes. Each file corresponds to a screen in the app. |
-| **`components/`** | Reusable UI widgets (e.g., `ai_provider_card.py` for API settings). |
-| **`utils/`** | Helper utilities (`gpu_detector.py`, `dependency_manager.py`, `logger.py`). |
+| **`app.py`** | Entry point. Creates the pywebview window and exposes `WebAPI` (all functions the frontend can call). |
+| **`clipper_core.py`** | Core business logic. Contains all video processing and AI interaction code (`AutoClipperCore`). |
+| **`web/`** | The actual UI — `index.html`, `app.js`, `css/`, `components/`. This is what renders inside the pywebview window. |
+| **`config/`** | `ai_provider_config.py` (provider definitions), `config_manager.py` (read/write `config.json`). |
+| **`utils/`** | Helper utilities (`gpu_detector.py`, `dependency_manager.py`, `helpers.py`, `logger.py`, `font_scanner.py`). |
 | **`assets/`** | Images and icons. |
-| **`SYSTEM_PROMPT.md`** | Default prompt used for AI highlight detection. |
-| **`build.spec`** | PyInstaller configuration for building the executable. |
+| **`build.spec` / `build_macos.spec` / `build_web.spec`** | PyInstaller configs — all three build from `app.py` only. |
 
 ## 🔄 Core Workflows
 
 ### 1. Highlight Detection Flow
 `clipper_core.py` -> `find_highlights`:
 1.  Reads `.srt` file from download.
-2.  Constructs a prompt using `SYSTEM_PROMPT.md` + Transcript.
-3.  Sends to LLM (GPT-4/Gemini/etc.).
+2.  Constructs a prompt using the AI highlight-finding logic + Transcript.
+3.  Sends to LLM (GPT-4/Gemini/etc., per configured provider).
 4.  Parses JSON response containing start/end timestamps and hook text.
 
 ### 2. Portrait Conversion Flow
-`clipper_core.py` -> `convert_to_portrait`:
+`clipper_core.py` -> `convert_to_portrait_mediapipe` / `convert_to_portrait_opencv`:
 1.  **Face Detection**: Uses OpenCV/MediaPipe to find faces in frames.
 2.  **Active Speaker**: Analyzes lip movement (if MediaPipe) or simplistic face tracking (OpenCV).
-3.  **Cropping**: detailed logic to calculate the 9:16 crop window, ensuring smooth transitions (simulated camera cuts).
+3.  **Cropping**: calculates the 9:16 crop window, ensuring smooth transitions (simulated camera cuts).
 
 ### 3. Captioning Flow
-`clipper_core.py` -> `process_clip`:
+`clipper_core.py` -> `add_captions_api_with_progress`:
 1.  Extracts audio from cut clip.
 2.  Sends to Whisper API -> gets word-level timestamps.
 3.  Generates `.ass` subtitle file with specific styling (Yellow highlight, specific font).
@@ -71,7 +71,7 @@
 
 ## 🛠️ Development Setup
 
-### specific Requirements
+### Requirements
 - **FFmpeg** and **yt-dlp** must be in PATH or configured.
 - `requirements.txt` contains Python libs.
 
@@ -79,27 +79,3 @@
 ```bash
 pip install -r requirements.txt
 python app.py
-```
-
-### Packaging
-```bash
-pyinstaller build.spec
-```
-
-## 📝 Coding Standards & Conventions
-- **Type Hinting**: Encouraged for core logic methods (e.g., `def process(self, url: str) -> dict`).
-- **Error Handling**: 
-  - GUI should never crash. Catch exceptions and show `messagebox.showerror`.
-  - Log errors to `error.log` using `utils.logger`.
-- **Async/Threading**: strictly use `threading.Thread` for blocking I/O (network/disk) to prevent freezing the `tkinter` main loop.
-- **Config**: Always access/save settings via `self.config` in `app.py` or pass config dicts to `clipper_core.py`.
-
-## 🤖 AI Agent Tips
-- When modifying `clipper_core.py`, be mindful of the huge method size. Consider breaking down `process_clip` if adding complexity.
-- **Prompt Engineering**: Changes to logic often require changes to `SYSTEM_PROMPT.md`. Check that file if highlight quality degrades.
-- **Dependencies**: `utils/dependency_manager.py` handles auto-downloading binaries (ffmpeg/yt-dlp) for end-users. Do not break this flow.
-
-## 🔗 Related Documentation
-- `README.md`: General user info.
-- `GUIDE.md`: Detailed usage guide.
-- `BUILD.md`: Detailed build instructions (PyInstaller).

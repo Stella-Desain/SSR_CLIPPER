@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec file for YT Short Clipper Desktop App
+# PyInstaller spec file for SSR_CLIPPER Desktop App
 
 import os
 import sys
@@ -72,7 +72,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='YTShortClipper',
+    name='SSR_CLIPPER',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

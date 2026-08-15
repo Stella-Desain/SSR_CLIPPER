@@ -5,7 +5,6 @@ YouTube Uploader - Upload videos to YouTube using OAuth2
 import os
 import sys
 import json
-import pickle
 import webbrowser
 import threading
 from pathlib import Path

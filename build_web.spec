@@ -58,7 +58,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='YTShortClipperWeb',
+    name='SSR_CLIPPER_Web',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

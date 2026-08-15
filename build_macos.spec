@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec file for YT Short Clipper - macOS (.app bundle)
+# PyInstaller spec file for SSR_CLIPPER - macOS (.app bundle)
 
 import os
 import sys
@@ -61,7 +61,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='YTShortClipper',
+    name='SSR_CLIPPER',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -83,23 +83,23 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='YTShortClipper',
+    name='SSR_CLIPPER',
 )
 
 app = BUNDLE(
     coll,
-    name='YTShortClipper.app',
+    name='SSR_CLIPPER.app',
     icon=icon_path,
-    bundle_identifier='org.ytclip.ytshortclipper',
+    bundle_identifier='com.stelladesain.ssrclipper',
     info_plist={
-        'CFBundleName': 'YT Short Clipper',
-        'CFBundleDisplayName': 'YT Short Clipper',
+        'CFBundleName': 'SSR_CLIPPER',
+        'CFBundleDisplayName': 'SSR_CLIPPER',
         'CFBundleShortVersionString': '0.0.19',
         'CFBundleVersion': '0.0.19',
         'NSHighResolutionCapable': True,
         'NSRequiresAquaSystemAppearance': False,  # Support dark mode
         'LSMinimumSystemVersion': '10.15',  # macOS Catalina minimum
-        'NSMicrophoneUsageDescription': 'YT Short Clipper needs microphone access for audio processing.',
-        'NSAppleEventsUsageDescription': 'YT Short Clipper needs automation access.',
+        'NSMicrophoneUsageDescription': 'SSR_CLIPPER needs microphone access for audio processing.',
+        'NSAppleEventsUsageDescription': 'SSR_CLIPPER needs automation access.',
     },
 )

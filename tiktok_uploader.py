@@ -112,7 +112,7 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             <head><title>TikTok Connected</title></head>
             <body style="font-family: Arial; text-align: center; padding: 50px;">
                 <h1 style="color: #00f2ea;">✓ TikTok Connected!</h1>
-                <p>You can close this window and return to YT Short Clipper.</p>
+                <p>You can close this window and return to SSR_CLIPPER.</p>
             </body>
             </html>
             """

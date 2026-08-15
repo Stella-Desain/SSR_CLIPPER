@@ -1,6 +1,6 @@
-# 📖 YT-Short-Clipper User Guide
+# 📖 SSR_CLIPPER User Guide
 
-Complete guide for using YT-Short-Clipper for beginners.
+Complete guide for using SSR_CLIPPER for beginners.
 
 ---
 
@@ -32,7 +32,7 @@ Complete guide for using YT-Short-Clipper for beginners.
 
 ### 1.1 Download from GitHub
 
-1. Go to the YT-Short-Clipper GitHub page
+1. Go to the SSR_CLIPPER GitHub page
 2. Click **"Releases"** in the right sidebar
 
    ![GitHub Releases](assets/docs/01.github-releases.png)
@@ -226,4 +226,3 @@ The resulting clips will be saved in the `output/` folder inside the app folder.
 ## ❓ Need Help?
 
 - 🔑 [Get AI API Key here](https://ai.ytclip.org)
-- 💬 Join [Discord Community](https://s.id/ytsdiscord) for Q&A, bug reports, and discussions with other users
