@@ -2,6 +2,8 @@
    Clipper - App Shell
    ═══════════════════════════════════════ */
 
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+
 const root = document.getElementById('app');
 const shell = document.createElement('div');
 shell.className = 'shell';
