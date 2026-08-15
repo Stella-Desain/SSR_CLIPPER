@@ -121,7 +121,7 @@ class WebAPI:
         try:
             resp = requests.get(url, headers=self._auth_headers(api_key), timeout=15)
             if resp.status_code != 200:
-                return {"models": [], "error": str(resp.status_code)}
+                return {"models": []}
             data = resp.json()
             items = data.get("data", [])
             models = []
@@ -130,91 +130,8 @@ class WebAPI:
                 if mid:
                     models.append(mid)
             return {"models": models}
-        except requests.exceptions.Timeout:
-            return {"models": [], "error": "timeout"}
-        except requests.exceptions.ConnectionError:
-            return {"models": [], "error": "connection failed"}
-        except Exception as e:
-            return {"models": [], "error": str(e)[:60]}
-
-    def test_model(self, base_url, api_key, model, model_type):
-        """Test apakah model tertentu BENERAN bisa dipanggil (real call), bukan cuma ada di daftar."""
-        if model_type == 'local':
-            try:
-                from faster_whisper.utils import download_model
-            except ImportError:
-                return {"status": "error", "message": "Error: whisper library belum terinstall"}
-            try:
-                download_model(model, local_files_only=True)
-                return {"status": "ok", "message": "Ready - Installed"}
-            except Exception:
-                return {"status": "error", "message": "Error: model belum di-download"}
-
-        if not base_url or not api_key:
-            return {"status": "error", "message": "Empty"}
-        if not model:
-            return {"status": "error", "message": "Error: model belum dipilih"}
-
-        headers = self._auth_headers(api_key)
-        url = base_url.rstrip("/")
-
-        try:
-            if model_type == 'chat':
-                endpoint = url if url.endswith("/chat/completions") else f"{url}/chat/completions"
-                resp = requests.post(endpoint, headers=headers, json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": "ping"}],
-                    "max_tokens": 1
-                }, timeout=15)
-                if resp.status_code == 200:
-                    return {"status": "ok", "message": "Ready - API tested"}
-                return {"status": "error", "message": f"Error {resp.status_code}"}
-
-            elif model_type == 'tts':
-                endpoint = url if url.endswith("/audio/speech") else f"{url}/audio/speech"
-                tts_headers = dict(headers)
-                tts_headers["Content-Type"] = "application/json"
-                resp = requests.post(endpoint, headers=tts_headers, json={
-                    "model": model,
-                    "input": "test",
-                    "voice": "alloy"
-                }, timeout=20)
-                if resp.status_code == 200 and resp.content:
-                    return {"status": "ok", "message": "Ready - API tested"}
-                return {"status": "error", "message": f"Error {resp.status_code}"}
-
-            elif model_type == 'stt':
-                endpoint = url if url.endswith("/audio/transcriptions") else f"{url}/audio/transcriptions"
-                wav_bytes = self._generate_silent_wav()
-                files = {'file': ('test.wav', wav_bytes, 'audio/wav')}
-                data = {'model': model}
-                resp = requests.post(endpoint, headers=headers, files=files, data=data, timeout=20)
-                if resp.status_code == 200:
-                    return {"status": "ok", "message": "Ready - API tested"}
-                return {"status": "error", "message": f"Error {resp.status_code}"}
-
-            else:
-                return {"status": "error", "message": "Error: tipe model tidak dikenal"}
-
-        except requests.exceptions.Timeout:
-            return {"status": "error", "message": "Error timeout"}
-        except requests.exceptions.ConnectionError:
-            return {"status": "error", "message": "Error connection failed"}
-        except Exception as e:
-            return {"status": "error", "message": f"Error {str(e)[:60]}"}
-
-    def _generate_silent_wav(self, duration_sec=0.5, sample_rate=16000):
-        """Bikin file WAV silent kecil di memory, dipakai buat test endpoint STT/transcription."""
-        import io
-        import wave
-        buf = io.BytesIO()
-        with wave.open(buf, 'wb') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(sample_rate)
-            wf.writeframes(b'\x00\x00' * int(sample_rate * duration_sec))
-        buf.seek(0)
-        return buf.read()
+        except:
+            return {"models": []}
 
     def save_ai_settings(self, settings):
         if not isinstance(settings, dict):
@@ -288,11 +205,7 @@ class WebAPI:
         whisper_model_name = ai_providers.get("whisper_model", "api")
         local_whisper_settings = {
             "enabled": whisper_model_name != "api",
-            # NOTE: key must be "model_size" — AutoClipperCore._load_local_whisper()
-            # reads settings.get("model_size", ...). It used to be "model" here,
-            # which meant the user's chosen local Whisper model (e.g. "medium")
-            # was silently ignored and always fell back to "large-v3-turbo".
-            "model_size": whisper_model_name if whisper_model_name != "api" else "large-v3-turbo"
+            "model": whisper_model_name if whisper_model_name != "api" else None
         }
 
         core = AutoClipperCore(
@@ -355,10 +268,7 @@ class WebAPI:
     def reload_whisper_model(self):
         """Reloads the local whisper model."""
         try:
-            import faster_whisper  # noqa
-            return {"status": "success", "message": "Library whisper terdeteksi. Model akan dipakai ulang di run berikutnya."}
-        except ImportError:
-            return {"status": "error", "message": "Library whisper belum terinstall. Klik 'Install All' dulu."}
+            return {"status": "success", "message": "Whisper model will be reloaded on the next clip generation run."}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -1009,20 +919,12 @@ class WebAPI:
                 whisper_ok = True
             except ImportError:
                 whisper_ok = False
-                
-        ytdlp_path = get_ytdlp_path()
-        ytdlp_ok = ytdlp_path is not None and ytdlp_path != ""
-        if ytdlp_path not in ("yt_dlp_module",):
-            # kalau bukan python module, pastikan path/command-nya beneran ada
-            import shutil as _shutil
-            ytdlp_ok = _shutil.which(ytdlp_path) is not None or Path(ytdlp_path).exists()
         
         return {
             "cookies": has_cookies,
             "ffmpeg": ffmpeg_ok,
             "deno": deno_ok,
-            "whisper": whisper_ok,
-            "ytdlp": ytdlp_ok
+            "whisper": whisper_ok
         }
 
     def delete_clip(self, clip_path):

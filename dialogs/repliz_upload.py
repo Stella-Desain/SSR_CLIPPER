@@ -727,9 +727,12 @@ Return JSON format:
                 "accountId": account_id
             }
             
-            # Add schedule time if provided
-            if schedule_at:
-                payload["scheduleAt"] = schedule_at
+            # Add schedule time if provided or default to now (+1 min buffer) for immediate publish
+            if not schedule_at:
+                from datetime import datetime, timedelta
+                schedule_at = (datetime.utcnow() + timedelta(minutes=1)).isoformat() + "Z"
+            
+            payload["scheduleAt"] = schedule_at
             
             response = requests.post(
                 url,

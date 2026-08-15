@@ -5,6 +5,7 @@ Dependency Manager - Auto download and setup FFmpeg and Deno
 import sys
 import os
 import platform
+import subprocess
 import urllib.request
 import zipfile
 import tarfile
@@ -469,3 +470,66 @@ def check_dependency(name: str, app_dir: Path) -> bool:
         return path.exists()
     
     return False
+
+class DependencyManager:
+    """Wrapper agar app.py bisa memanggil satu method install_all()."""
+
+    def __init__(self, app_dir=None):
+        if app_dir is None:
+            if getattr(sys, 'frozen', False):
+                app_dir = Path(sys.executable).parent
+            else:
+                app_dir = Path(__file__).parent.parent
+        self.app_dir = Path(app_dir)
+
+    def install_all(self, progress_callback=None):
+        """Install ffmpeg, deno, yt-dlp, dan whisper. Dipanggil dari background thread."""
+        results = {}
+
+        debug_log("Starting install_all...")
+
+        if not check_dependency('ffmpeg', self.app_dir):
+            results['ffmpeg'] = setup_ffmpeg(self.app_dir, progress_callback)
+        else:
+            results['ffmpeg'] = True
+
+        if not check_dependency('deno', self.app_dir):
+            results['deno'] = setup_deno(self.app_dir, progress_callback)
+        else:
+            results['deno'] = True
+
+        results['ytdlp'] = self._install_ytdlp()
+        results['whisper'] = self._install_whisper()
+
+        debug_log(f"install_all finished: {results}")
+        return results
+
+    def _install_ytdlp(self):
+        try:
+            import yt_dlp  # noqa
+            return True
+        except ImportError:
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "-U", "yt-dlp"],
+                    check=True, timeout=120
+                )
+                return True
+            except Exception as e:
+                debug_log(f"yt-dlp install error: {e}")
+                return False
+
+    def _install_whisper(self):
+        try:
+            import faster_whisper  # noqa
+            return True
+        except ImportError:
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "-U", "faster-whisper"],
+                    check=True, timeout=300
+                )
+                return True
+            except Exception as e:
+                debug_log(f"whisper install error: {e}")
+                return False
