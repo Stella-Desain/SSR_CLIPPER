@@ -425,7 +425,7 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
           targetKey = aiView.fields.hfKey ? aiView.fields.hfKey.value.trim() : targetKey;
       } else if (model.startsWith("[Gemini] ")) {
           model = model.replace("[Gemini] ", "");
-          targetUrl = aiView.fields.hmUrl ? aiView.fields.hmUrl.value.trim() : targetUrl;
+          targetUrl = GEMINI_BASE_URL;
           targetKey = aiView.fields.hmKey ? aiView.fields.hmKey.value.trim() : targetKey;
       } else if (model.startsWith("[Custom1] ")) {
           model = model.replace("[Custom1] ", "");
@@ -457,7 +457,7 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
   const captionMakerPayload = getSmartPayload(aiView.fields.cmUrl, aiView.fields.cmKey, aiView.fields.cmModel);
   
   // If the user selected a local whisper model in Caption Maker, map it to whisper_model
-  const localSizes = ['large-v3-turbo', 'large-v3', 'medium', 'small', 'base', 'tiny'];
+  const localSizes = ['large-v3-turbo', 'medium'];
   let finalWhisperModel = aiView.fields.whisperModel ? aiView.fields.whisperModel.value : "api";
   
   if (localSizes.includes(captionMakerPayload.model)) {
@@ -554,18 +554,14 @@ async function validateAndLoad(kind) {
       let allModels = [];
       const providers = [
           { name: 'OpenAI', url: aiView.fields.hfUrl, key: aiView.fields.hfKey },
-          { name: 'Gemini', url: aiView.fields.hmUrl, key: aiView.fields.hmKey },
+          { name: 'Gemini', url: { value: GEMINI_BASE_URL }, key: aiView.fields.hmKey },
           { name: 'Custom1', url: aiView.fields.cmUrl, key: aiView.fields.cmKey },
           { name: 'Custom2', url: aiView.fields.cpUrl, key: aiView.fields.cpKey }
       ];
 
       // Add local models
       allModels.push('[Local] large-v3-turbo');
-      allModels.push('[Local] large-v3');
       allModels.push('[Local] medium');
-      allModels.push('[Local] small');
-      allModels.push('[Local] base');
-      allModels.push('[Local] tiny');
 
       let clickedValid = false;
       let ownModelCount = 0;
@@ -590,6 +586,10 @@ async function validateAndLoad(kind) {
               }
           }
       }
+
+      // Buang entry yang gak punya prefix provider valid (misal sisa data lama sebelum sistem prefix ada)
+      const VALID_PREFIX_RE = /^\[(OpenAI|Gemini|Custom1|Custom2|Local)\]\s/;
+      allModels = allModels.filter(m => VALID_PREFIX_RE.test(m));
 
       if (!apiKey) {
           kind.status.textContent = 'Empty';
@@ -669,7 +669,7 @@ async function validateAndLoad(kind) {
       if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
       
   } catch(e) {
-      kind.status.textContent = '❌ Error: ' + e;
+      kind.status.textContent = 'Error: ' + e;
       kind.status.style.color = 'var(--error)';
   }
 }
@@ -710,13 +710,15 @@ aiView.fields.cmValidateBtn.addEventListener('click', () => validateAndLoad({
   status: aiView.fields.cmValidateStatus
 }));
 
-aiView.fields.hmValidateBtn.addEventListener('click', () => validateAndLoad({
-  url: { value: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
-  key: aiView.fields.hmKey,
-  modelSelect: aiView.fields.hmModel,
-  homeSelect: homeView.fields.hookSub,
-  status: aiView.fields.hmValidateStatus
-}));
+if (aiView.fields.hmValidateBtn) {
+  aiView.fields.hmValidateBtn.addEventListener('click', () => validateAndLoad({
+    url: { value: GEMINI_BASE_URL },
+    key: aiView.fields.hmKey,
+    modelSelect: aiView.fields.hmModel,
+    homeSelect: homeView.fields.hookSub,
+    status: aiView.fields.hmValidateStatus
+  }));
+}
 
 if (aiView.fields.cpValidateBtn) {
   aiView.fields.cpValidateBtn.addEventListener('click', () => validateAndLoad({
@@ -760,7 +762,7 @@ function resolveModelPayloadForTest(modelField) {
       targetKey = aiView.fields.hfKey ? aiView.fields.hfKey.value.trim() : "";
   } else if (model.startsWith("[Gemini] ")) {
       model = model.replace("[Gemini] ", "");
-      targetUrl = aiView.fields.hmUrl ? aiView.fields.hmUrl.value.trim() : "";
+      targetUrl = GEMINI_BASE_URL;
       targetKey = aiView.fields.hmKey ? aiView.fields.hmKey.value.trim() : "";
   } else if (model.startsWith("[Custom1] ")) {
       model = model.replace("[Custom1] ", "");
