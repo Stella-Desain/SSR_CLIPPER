@@ -20,9 +20,6 @@ a = Analysis(
         ('youtube_uploader.py', '.'),
         ('config', 'config'),
         ('utils', 'utils'),
-        ('pages', 'pages'),
-        ('dialogs', 'dialogs'),
-        ('components', 'components'),
     ],
     hiddenimports=[
         'webview',

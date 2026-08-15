@@ -1,9 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec file for SSR_CLIPPER Desktop App
+# PyInstaller spec file for SSR_CLIPPER Desktop App (WebUI/pywebview)
 
 import os
-import sys
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
@@ -16,29 +15,23 @@ icon_path = 'assets/icon.ico' if os.path.exists('assets/icon.ico') else None
 a = Analysis(
     ['app.py'],
     pathex=[],
-    binaries=[
-        # Bundle yt-dlp executable
-        (r'C:\Users\jipra\AppData\Local\Programs\Python\Python313\Scripts\yt-dlp.exe', '.'),
-        
-        # Bundle Deno executable (required for yt-dlp --remote-components)
-        # Download from: https://github.com/denoland/deno/releases
-        # Windows: deno-x86_64-pc-windows-msvc.zip
-        # Extract deno.exe and place in project root, then uncomment line below:
-        # ('deno.exe', 'bin'),
-    ],
+    binaries=[],
     datas=[
         *opencv_data,
-        ('assets', 'assets'),  # Bundle assets folder
-        ('clipper_core.py', '.'),  # Bundle core module
-        ('youtube_uploader.py', '.'),  # Bundle YouTube module
+        ('assets', 'assets'),
+        ('web', 'web'),
+        ('clipper_core.py', '.'),
+        ('youtube_uploader.py', '.'),
+        ('config', 'config'),
+        ('utils', 'utils'),
     ],
     hiddenimports=[
-        'customtkinter',
+        'webview',
         'openai',
         'cv2',
         'numpy',
         'PIL',
-        'PIL._tkinter_finder',
+        'requests',
         'google.oauth2.credentials',
         'google_auth_oauthlib.flow',
         'googleapiclient.discovery',
@@ -56,6 +49,8 @@ a = Analysis(
         'scipy',
         'pandas',
         'tensorflow',
+        'customtkinter',
+        'tkinter',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
