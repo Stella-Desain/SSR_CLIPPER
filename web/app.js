@@ -593,6 +593,9 @@ async function validateAndLoad(kind) {
       const VALID_PREFIX_RE = /^\[(OpenAI|Gemini|Custom1|Custom2|Local)\]\s/;
       allModels = allModels.filter(m => VALID_PREFIX_RE.test(m));
 
+      // Buang duplikat exact-string (misal provider ngirim model ID yang sama 2x)
+      allModels = [...new Set(allModels)];
+
       if (!apiKey) {
           kind.status.textContent = 'Empty';
           kind.status.style.color = 'var(--text-muted)';

@@ -94,18 +94,14 @@ class WebAPI:
         # Check if it's Gemini (Google AI Studio)
         if "generativelanguage.googleapis.com" in base_url:
             return {"models": [
-                # Chat / Highlight Finder models
                 "gemini-3.6-flash",
                 "gemini-3.5-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.1-pro-preview",
                 "gemini-3-flash-preview",
-                # Audio / STT-capable models (multimodal, can transcribe audio)
-                "gemini-3.6-flash",
-                "gemini-3.5-flash",
-                "gemini-3.1-pro-preview",
-                # TTS models (Text-to-Speech)
                 "gemini-3.1-flash-tts-preview"
+                # Info audio/STT-capable model mana aja sekarang ada di
+                # GEMINI_AUDIO_MODELS (web/app.js), gak perlu diulang di sini.
             ]}
             
         # Check if it's Anthropic
