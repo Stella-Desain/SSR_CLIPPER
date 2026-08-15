@@ -546,9 +546,9 @@ aiView.fields.providerButtons.forEach(btn => {
 async function validateAndLoad(kind) {
   const baseUrl = kind.url ? kind.url.value.trim() : "";
   const apiKey = kind.key ? kind.key.value.trim() : "";
-  kind.status.textContent = 'Testing connection...';
+  kind.status.textContent = 'Testing...';
   kind.status.style.color = 'var(--text-muted)';
-  
+
   try {
       // 1. Fetch models from ALL configured providers
       let allModels = [];
@@ -558,7 +558,7 @@ async function validateAndLoad(kind) {
           { name: 'Custom1', url: aiView.fields.cmUrl, key: aiView.fields.cmKey },
           { name: 'Custom2', url: aiView.fields.cpUrl, key: aiView.fields.cpKey }
       ];
-      
+
       // Add local models
       allModels.push('[Local] large-v3-turbo');
       allModels.push('[Local] large-v3');
@@ -566,40 +566,46 @@ async function validateAndLoad(kind) {
       allModels.push('[Local] small');
       allModels.push('[Local] base');
       allModels.push('[Local] tiny');
-      
+
       let clickedValid = false;
-      
+      let ownModelCount = 0;
+      let ownError = null;
+
       for (const p of providers) {
           if (p.url && p.url.value && p.key && p.key.value) {
+              const isOwn = (baseUrl === p.url.value.trim() && apiKey === p.key.value.trim());
               try {
                   const pRes = await window.pywebview.api.get_models(p.url.value.trim(), p.key.value.trim());
                   if (pRes && pRes.models && pRes.models.length > 0) {
                       allModels = allModels.concat(pRes.models.map(m => `[${p.name}] ${m}`));
-                      if (baseUrl === p.url.value.trim() && apiKey === p.key.value.trim()) {
+                      if (isOwn) {
                           clickedValid = true;
+                          ownModelCount = pRes.models.length;
                       }
+                  } else if (isOwn) {
+                      ownError = (pRes && pRes.error) ? pRes.error : 'no models found';
                   }
-              } catch (e) {}
+              } catch (e) {
+                  if (isOwn) ownError = String(e);
+              }
           }
       }
-      
-      const ownKeyEmpty = !apiKey;
-      
-      if (ownKeyEmpty) {
-          if (allModels.length > 0) {
-              kind.status.textContent = 'ℹ Field ini kosong — pakai model dari provider lain';
-              kind.status.style.color = 'var(--text-muted)';
-          } else {
-              kind.status.textContent = '❌ Isi API key dulu';
-              kind.status.style.color = 'var(--error)';
-          }
-      } else if (!clickedValid && allModels.length === 0) {
-          kind.status.textContent = '❌ Invalid key or no models found';
-          kind.status.style.color = 'var(--error)';
-          return;
-      } else {
-          kind.status.textContent = clickedValid ? '✓ Valid, models loaded' : '✓ (Other keys loaded)';
+
+      if (!apiKey) {
+          kind.status.textContent = 'Empty';
+          kind.status.style.color = 'var(--text-muted)';
+      } else if (clickedValid) {
+          kind.status.textContent = `Valid, ${ownModelCount} model loaded`;
           kind.status.style.color = 'var(--success)';
+      } else if (ownError) {
+          kind.status.textContent = `Error ${ownError}`;
+          kind.status.style.color = 'var(--error)';
+      } else if (allModels.length > 0) {
+          kind.status.textContent = 'Other keys loaded';
+          kind.status.style.color = 'var(--text-muted)';
+      } else {
+          kind.status.textContent = 'Error no models found';
+          kind.status.style.color = 'var(--error)';
       }
       
       // Categorize models based on strict rules
@@ -781,12 +787,12 @@ function resolveModelPayloadForTest(modelField) {
 
 async function testModelReadiness(modelField, testBtn, statusSpan) {
   if (!modelField || !modelField.value || modelField.value.startsWith('Select Model')) {
-      statusSpan.textContent = '❌ Pilih model dulu';
+      statusSpan.textContent = 'Empty';
       statusSpan.style.color = 'var(--error)';
       return;
   }
   testBtn.disabled = true;
-  testBtn.textContent = '...';
+  testBtn.textContent = 'Testing...';
   statusSpan.textContent = 'Testing...';
   statusSpan.style.color = 'var(--text-muted)';
 
@@ -794,14 +800,14 @@ async function testModelReadiness(modelField, testBtn, statusSpan) {
       const payload = resolveModelPayloadForTest(modelField);
       const res = await window.pywebview.api.test_model(payload.base_url, payload.api_key, payload.model, payload.model_type);
       if (res && res.status === 'ok') {
-          statusSpan.textContent = '✅ Ready — ' + res.message;
+          statusSpan.textContent = res.message;
           statusSpan.style.color = 'var(--success)';
       } else {
-          statusSpan.textContent = '❌ Not ready — ' + (res ? res.message : 'Unknown error');
+          statusSpan.textContent = res ? res.message : 'Error unknown';
           statusSpan.style.color = 'var(--error)';
       }
   } catch (e) {
-      statusSpan.textContent = '❌ Error: ' + e;
+      statusSpan.textContent = 'Error: ' + e;
       statusSpan.style.color = 'var(--error)';
   }
 
