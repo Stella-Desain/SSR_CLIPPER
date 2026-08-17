@@ -189,7 +189,7 @@ class WebAPI:
         cfg_mgr.save()
         return {"status": "saved"}
 
-    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False, highlight_finder=True, yt_title_maker=True):
+    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False, highlight_finder=True, yt_title_maker=True, campaign_id=None):
         if self.thread and self.thread.is_alive():
             return {"status": "busy"}
         
@@ -200,12 +200,13 @@ class WebAPI:
             "status": "Starting",
             "progress": 0,
             "url": url,
-            "clips": num_clips
+            "clips": num_clips,
+            "campaign_id": campaign_id
         }
             
         self.thread = threading.Thread(
             target=self._run,
-            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang, bool(portrait), bool(highlight_finder), bool(yt_title_maker)),
+            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang, bool(portrait), bool(highlight_finder), bool(yt_title_maker), campaign_id),
             daemon=True,
         )
         self.thread.start()
@@ -291,7 +292,7 @@ class WebAPI:
         try:
             self.status = "running"
             self.progress = 0.0
-            core.process(url, num_clips=num_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait, highlight_finder=highlight_finder, yt_title_maker=yt_title_maker)
+            core.process(url, num_clips=num_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait, highlight_finder=highlight_finder, yt_title_maker=yt_title_maker, campaign_id=campaign_id)
             self.status = "complete"
             self.progress = 1.0
             if self.current_job:
@@ -433,10 +434,164 @@ class WebAPI:
             return {"status": "error", "message": str(e)}
 
     def get_campaigns(self):
-        """Repliz public API has no campaigns endpoint yet. Return an empty list
-        (not an error object) so the frontend's `campaigns.length` check works
-        correctly and the Campaigns Tree just renders empty instead of breaking."""
-        return []
+        cfg = self._get_cfg()
+        campaigns = cfg.get("campaigns", [])
+        try:
+            accounts_res = self.get_repliz_accounts()
+            accounts_by_id = {a["_id"]: a for a in accounts_res.get("accounts", [])} if accounts_res.get("status") == "ok" else {}
+        except Exception:
+            accounts_by_id = {}
+        result = []
+        for camp in campaigns:
+            acc_ids = camp.get("account_ids", [])
+            camp_out = dict(camp)
+            camp_out["account_names"] = [accounts_by_id[a]["name"] for a in acc_ids if a in accounts_by_id]
+            stats = self.get_campaign_stats(camp.get("id"))
+            camp_out["stats"] = stats
+            result.append(camp_out)
+        return result
+
+    def create_campaign(self, payload):
+        import uuid
+        cfg = self._get_cfg()
+        if "campaigns" not in cfg:
+            cfg["campaigns"] = []
+        campaign_id = "camp_" + uuid.uuid4().hex[:8]
+        new_camp = dict(payload)
+        new_camp["id"] = campaign_id
+        cfg["campaigns"].append(new_camp)
+        self._get_cfg_manager().save(cfg)
+        return {"status": "ok", "campaign": new_camp}
+
+    def update_campaign(self, campaign_id, payload):
+        cfg = self._get_cfg()
+        campaigns = cfg.get("campaigns", [])
+        for i, camp in enumerate(campaigns):
+            if camp.get("id") == campaign_id:
+                updated = dict(payload)
+                updated["id"] = campaign_id
+                if "banner_path" in camp and "banner_path" not in updated:
+                    updated["banner_path"] = camp["banner_path"]
+                cfg["campaigns"][i] = updated
+                self._get_cfg_manager().save(cfg)
+                return {"status": "ok", "campaign": updated}
+        return {"status": "error", "message": "Campaign not found"}
+
+    def delete_campaign(self, campaign_id):
+        cfg = self._get_cfg()
+        campaigns = cfg.get("campaigns", [])
+        cfg["campaigns"] = [c for c in campaigns if c.get("id") != campaign_id]
+        self._get_cfg_manager().save(cfg)
+        return {"status": "ok"}
+
+    def upload_campaign_banner(self, campaign_id, file_path):
+        import shutil
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+            return {"status": "error", "message": "Invalid extension"}
+        
+        assets_dir = get_app_dir() / "campaign_assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = assets_dir / f"{campaign_id}{ext}"
+        
+        try:
+            shutil.copy2(file_path, dest_path)
+            # Make relative to app dir
+            rel_path = f"campaign_assets/{campaign_id}{ext}"
+            
+            # Update campaign
+            cfg = self._get_cfg()
+            campaigns = cfg.get("campaigns", [])
+            for c in campaigns:
+                if c.get("id") == campaign_id:
+                    c["banner_path"] = rel_path
+                    self._get_cfg_manager().save(cfg)
+                    break
+            return {"status": "ok", "banner_path": rel_path}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def extract_campaign_brief(self, content_type, content):
+        cfg = self._get_cfg()
+        provider = cfg.get("ai_providers", {}).get("brief_extractor", {})
+        api_key = provider.get("api_key")
+        base_url = provider.get("base_url")
+        model = provider.get("model")
+        
+        if not api_key:
+            return {"status": "error", "message": "API Key Brief Extractor belum diset"}
+        
+        text_content = ""
+        
+        if content_type == "doc":
+            try:
+                ext = os.path.splitext(content)[1].lower()
+                if ext in [".docx", ".doc"]:
+                    import docx
+                    doc = docx.Document(content)
+                    text_content = "\n".join([p.text for p in doc.paragraphs])
+                elif ext == ".pdf":
+                    import pypdf
+                    with open(content, "rb") as f:
+                        reader = pypdf.PdfReader(f)
+                        text_content = "\n".join([page.extract_text() for page in reader.pages])
+                else:
+                    return {"status": "error", "message": "Format dokumen tidak didukung"}
+            except Exception as e:
+                return {"status": "error", "message": f"Gagal membaca dokumen, coba tempel teks manual. Error: {e}"}
+        
+        from openai import OpenAI
+        try:
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            messages = [
+                {"role": "system", "content": 'Kamu membaca brief campaign dari brand. Ekstrak informasinya ke JSON dengan schema berikut, HANYA output JSON, tanpa teks lain:\n{"name": "...", "brief": {"durasi_min": 0, "durasi_max": 0, "hashtags": [], "tagged_accounts": [], "hooks": [], "catatan": "...", "angles": [], "persona": "...", "tujuan": "...", "cta": "..."}, "do_rules": [], "dont_rules": [], "aturan_umum": [{"title":"...","description":"..."}]}\nKalau suatu field tidak ditemukan di brief, isi string kosong "" atau array kosong [], JANGAN mengarang.'}
+            ]
+            
+            if content_type == "image":
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Ekstrak informasi dari gambar brief ini."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{content}"}}
+                    ]
+                })
+            else:
+                if content_type == "text":
+                    text_content = content
+                messages.append({"role": "user", "content": text_content})
+            
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.2
+            )
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```json"):
+                raw = raw[7:]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+            raw = raw.strip()
+            return {"status": "ok", "extracted": json.loads(raw)}
+        except Exception as e:
+            return {"status": "error", "message": f"AI gagal memproses, coba lagi atau isi manual. Error: {str(e)[:100]}"}
+
+    def get_campaign_stats(self, campaign_id):
+        cfg = self._get_cfg()
+        camp = next((c for c in cfg.get("campaigns", []) if c.get("id") == campaign_id), None)
+        account_count = len(camp.get("account_ids", [])) if camp else 0
+        clip_uploaded = 0
+        clip_in_stock = 0
+        try:
+            for folder in self.get_video_folders():
+                if folder.get("campaign_id") != campaign_id:
+                    continue
+                for clip in self.get_stock_clips(folder.get("id")):
+                    clip_in_stock += 1
+                    if clip.get("upload_status") == "sukses":
+                        clip_uploaded += 1
+        except Exception:
+            pass
+        return {"account_count": account_count, "clip_uploaded": clip_uploaded, "clip_in_stock": clip_in_stock}
 
     def get_app_config(self):
         """Returns safe global config properties for UI"""
@@ -848,6 +1003,7 @@ class WebAPI:
                     "clip_count": clip_count,
                     "date": data.get("created_at", ""),
                     "path": str(child),
+                    "campaign_id": data.get("campaign_id")
                 })
 
         folders.sort(key=lambda f: f.get("date", ""), reverse=True)

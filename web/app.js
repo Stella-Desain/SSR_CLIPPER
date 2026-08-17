@@ -24,16 +24,20 @@ shell.appendChild(mainWrapper);
 
 // ── Build Views ──
 const dashboardView = window.Components.DashboardView();
+const campaignListView = window.Components.CampaignListView();
+const campaignEditView = window.Components.CampaignEditView();
 const homeView = window.Components.HomeView();
 const stockClipView = window.Components.StockClipView();
 const aiView = window.Components.AiSettingsView();
 
 pageContent.appendChild(dashboardView.element);
+pageContent.appendChild(campaignListView.element);
+pageContent.appendChild(campaignEditView.element);
 pageContent.appendChild(homeView.element);
 pageContent.appendChild(stockClipView.element);
 pageContent.appendChild(aiView.element);
 
-const allViews = [dashboardView.element, homeView.element, stockClipView.element, aiView.element];
+const allViews = [dashboardView.element, campaignListView.element, campaignEditView.element, homeView.element, stockClipView.element, aiView.element];
 const navItems = shellComp.navItems;
 
 // ── State ──
@@ -279,7 +283,8 @@ async function start() {
       homeView.fields.subtitle.value,
       homeView.fields.portrait.checked,
       homeView.fields.highlight.checked,
-      homeView.fields.ytTitle.checked
+      homeView.fields.ytTitle.checked,
+      homeView.fields.campaign ? homeView.fields.campaign.value : ""
     );
     if (res && res.status === 'started') {
       poll();
@@ -437,6 +442,10 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
           model = model.replace("[Custom2] ", "");
           targetUrl = aiView.fields.cpUrl ? aiView.fields.cpUrl.value.trim() : targetUrl;
           targetKey = aiView.fields.cpKey ? aiView.fields.cpKey.value.trim() : targetKey;
+      } else if (model.startsWith("[Custom3] ")) {
+          model = model.replace("[Custom3] ", "");
+          targetUrl = aiView.fields.c3Url ? aiView.fields.c3Url.value.trim() : targetUrl;
+          targetKey = aiView.fields.c3Key ? aiView.fields.c3Key.value.trim() : targetKey;
       } else if (model.startsWith("[Local] ")) {
           model = model.replace("[Local] ", "");
           // Keep targetUrl and targetKey unchanged so we don't corrupt the saved API credentials
@@ -469,15 +478,23 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
       finalWhisperModel = "api";
   }
 
+  const cpUrl = aiView.fields.cpUrl ? aiView.fields.cpUrl.value.trim() : "";
+  const cpKey = aiView.fields.cpKey ? aiView.fields.cpKey.value.trim() : "";
+
   const payload = {
     _provider_type: "custom",
     provider_type: "custom",
     highlight_finder: getSmartPayload(aiView.fields.hfUrl, aiView.fields.hfKey, aiView.fields.hfModel),
     caption_maker: captionMakerPayload,
     hook_maker: getSmartPayload(aiView.fields.hmUrl, aiView.fields.hmKey, aiView.fields.hmModel),
+    brief_extractor: getSmartPayload(aiView.fields.c3Url, aiView.fields.c3Key, aiView.fields.beModel),
     custom_provider: {
       base_url: cpUrl,
       api_key: cpKey
+    },
+    custom_provider_3: {
+      base_url: aiView.fields.c3Url ? aiView.fields.c3Url.value.trim() : "",
+      api_key: aiView.fields.c3Key ? aiView.fields.c3Key.value.trim() : ""
     },
     yt_title_maker: getSmartPayload(null, null, aiView.fields.ytModel),
     whisper_model: finalWhisperModel,
@@ -922,11 +939,16 @@ async function init() {
     if (aiView.fields.hmModel) setSelectOptions(aiView.fields.hmModel, [hm.model].filter(Boolean), hm.model || '');
     
     const cp = (ai && ai.custom_provider) || {};
+    const c3 = (ai && ai.custom_provider_3) || {};
     const yt = (ai && ai.yt_title_maker) || {};
+    const be = (ai && ai.brief_extractor) || {};
     const rep = (ai && ai.repliz) || {};
     if (aiView.fields.cpUrl) aiView.fields.cpUrl.value = cp.base_url || '';
     if (aiView.fields.cpKey) aiView.fields.cpKey.value = cp.api_key || '';
     if (aiView.fields.ytModel) setSelectOptions(aiView.fields.ytModel, [yt.model].filter(Boolean), yt.model || '');
+    if (aiView.fields.c3Url) aiView.fields.c3Url.value = c3.base_url || '';
+    if (aiView.fields.c3Key) aiView.fields.c3Key.value = c3.api_key || '';
+    if (aiView.fields.beModel) setSelectOptions(aiView.fields.beModel, [be.model].filter(Boolean), be.model || '');
     // Removed: if (aiView.fields.whisperModel && ai.whisper_model) aiView.fields.whisperModel.value = ai.whisper_model;
     if (aiView.fields.replizAccessKey) aiView.fields.replizAccessKey.value = rep.access_key || '';
     if (aiView.fields.replizSecretKey) aiView.fields.replizSecretKey.value = rep.secret_key || '';
@@ -1013,6 +1035,14 @@ async function init() {
 
   // Refresh dashboard data now that API is ready
   if (dashboardView.refresh) dashboardView.refresh();
+  
+  if (typeof refreshCampaignList === 'function') {
+      try {
+          await refreshCampaignList();
+      } catch (e) { console.warn('Failed to load campaigns:', e); }
+  }
+
+  window._initDone = true;
 }
 
 // ── Load Dependency Status ──

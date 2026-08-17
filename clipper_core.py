@@ -602,7 +602,7 @@ KONTEN
 Transcript:
 {transcript}"""
     
-    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True):
+    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True, campaign_id: str = None):
         """Main processing pipeline"""
         
         # TODO: logic highlight_finder/yt_title_maker belum diimplementasi di core
@@ -666,6 +666,7 @@ Transcript:
             "url": url,
             "created_at": datetime.now().isoformat(),
             "clip_count": total_clips,
+            "campaign_id": campaign_id
         }
         with open(video_folder / "data.json", "w", encoding="utf-8") as f:
             json.dump(video_meta, f, ensure_ascii=False, indent=2)

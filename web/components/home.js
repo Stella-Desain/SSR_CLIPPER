@@ -48,7 +48,7 @@ window.Components.HomeView = function () {
   urlInput.className = 'input';
   urlInput.id = 'url';
   urlInput.type = 'text';
-  urlInput.placeholder = 'Paste YouTube link here...';
+  urlInput.placeholder = 'https://youtube.com/watch?v=...';
   urlInput.style.flex = '1';
   const pasteBtn = document.createElement('button');
   pasteBtn.className = 'btn btn-outline';
@@ -63,6 +63,17 @@ window.Components.HomeView = function () {
   urlRow.appendChild(pasteBtn);
   urlGroup.appendChild(urlRow);
   configBody.appendChild(urlGroup);
+
+  // Campaign Dropdown
+  const campGroup = document.createElement('div');
+  campGroup.style.marginBottom = '20px';
+  campGroup.innerHTML = `<label class="field-label" style="display:block;margin-bottom:6px;">Campaign</label>`;
+  const campSelect = document.createElement('select');
+  campSelect.className = 'select';
+  campSelect.id = 'home-campaign-select';
+  campSelect.innerHTML = `<option value="">Tanpa campaign</option>`;
+  campGroup.appendChild(campSelect);
+  configBody.appendChild(campGroup);
 
   // Features section
   const optLabel = document.createElement('label');
@@ -364,6 +375,7 @@ window.Components.HomeView = function () {
     element: section,
     fields: {
       url: urlInput,
+      campaign: campSelect,
       start: startBtn,
       clips: clipsInput,
       subtitle: subtitleSelect,

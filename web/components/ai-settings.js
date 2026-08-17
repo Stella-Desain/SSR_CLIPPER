@@ -232,6 +232,48 @@ window.Components.AiSettingsView = function () {
   apiGrid.appendChild(custom2Row);
   apiGrid.appendChild(ytTitle.element);
 
+  // Row 5: Custom Provider 3 + Brief Extractor
+  const custom3Row = document.createElement('div');
+  custom3Row.className = 'field-group';
+  custom3Row.style.cssText = 'grid-column:1;margin:0;gap:0;';
+
+  const custom3Lbl = document.createElement('label');
+  custom3Lbl.className = 'field-label';
+  custom3Lbl.textContent = 'Custom Provider 3';
+  custom3Row.appendChild(custom3Lbl);
+
+  const custom3InputRow = document.createElement('div');
+  custom3InputRow.style.cssText = 'display:flex;gap:8px;align-items:stretch;';
+
+  const cust3EndpointInput = document.createElement('input');
+  cust3EndpointInput.className = 'input';
+  cust3EndpointInput.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;flex:1;height:${INPUT_H_C};font-size:14px;padding:0 12px;outline:none;`;
+  cust3EndpointInput.placeholder = '(Opsional) End Point';
+
+  const cust3KeyInput = document.createElement('input');
+  cust3KeyInput.className = 'input';
+  cust3KeyInput.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;flex:1;height:${INPUT_H_C};font-size:14px;padding:0 12px;outline:none;`;
+  cust3KeyInput.placeholder = '(Opsional) API Key';
+  cust3KeyInput.type = 'password';
+
+  const cust3TestBtn = document.createElement('button');
+  cust3TestBtn.style.cssText = `background:${FIELD_BG_C};border:none;border-radius:6px;padding:0 18px;font-weight:500;font-size:13px;cursor:pointer;height:${INPUT_H_C};white-space:nowrap;color:var(--text);font-family:inherit;flex-shrink:0;`;
+  cust3TestBtn.textContent = 'Test';
+
+  custom3InputRow.appendChild(cust3EndpointInput);
+  custom3InputRow.appendChild(cust3KeyInput);
+  custom3InputRow.appendChild(cust3TestBtn);
+  custom3Row.appendChild(custom3InputRow);
+  
+  const cust3TestStatus = document.createElement('span');
+  cust3TestStatus.style.cssText = 'font-size:12px; margin-top:4px; min-height:16px; display:block;';
+  custom3Row.appendChild(cust3TestStatus);
+
+  const briefExtractor = makeApiField('Brief Extractor', 'Select Model', true);
+
+  apiGrid.appendChild(custom3Row);
+  apiGrid.appendChild(briefExtractor.element);
+
   apiBody.appendChild(apiGrid);
   apiCard.appendChild(apiBody);
 
@@ -918,6 +960,13 @@ window.Components.AiSettingsView = function () {
       ytModel: ytTitle.input,
       ytModelTestBtn: ytTitle.testBtn,
       ytModelStatus: ytTitle.status,
+      c3Url: cust3EndpointInput,
+      c3Key: cust3KeyInput,
+      c3ValidateBtn: cust3TestBtn,
+      c3ValidateStatus: cust3TestStatus,
+      beModel: briefExtractor.input,
+      beModelTestBtn: briefExtractor.testBtn,
+      beModelStatus: briefExtractor.status,
       replizAccessKey: replizAccessKey,
       replizSecretKey: replizSecretKey,
       replizTestBtn: replizTestBtn,

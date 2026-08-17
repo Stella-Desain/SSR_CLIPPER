@@ -9,7 +9,7 @@ pip install pyinstaller
 
 echo.
 echo [2/3] Build EXE dengan PyInstaller (ini bisa makan waktu agak lama)...
-pyinstaller --clean --noconfirm build.spec
+python -m PyInstaller --clean --noconfirm build.spec
 
 echo.
 echo [3/3] Selesai!
