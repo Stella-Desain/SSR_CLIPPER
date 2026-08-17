@@ -36,7 +36,7 @@ window.Components.StockClipView = function () {
   const filterRow = document.createElement('div');
   filterRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;';
   filterRow.innerHTML = `
-    <select id="stock-campaign-filter" class="select" style="width:auto;min-width:140px;max-width:200px;"><option value="all">Campaign: All</option></select>
+    <select id="stock-campaign-filter" class="select" style="width:auto;min-width:140px;max-width:200px;"><option value="all">Video: All</option></select>
     <span id="stock-clips-count" style="font-size:13px;color:var(--text-secondary);font-weight:500;">Clips: 0</span>
   `;
   jobsBody.appendChild(filterRow);
@@ -75,15 +75,15 @@ window.Components.StockClipView = function () {
   clipsHeader.innerHTML = `
     <h2 class="card-title">Clips</h2>
     <div style="display:flex; gap:8px;">
-        <select id="upload-platform" class="select" style="width:100px;">
-            <option value="tiktok">TikTok</option>
-            <option value="youtube">YouTube</option>
-            <option value="repliz">Repliz</option>
+        <select id="stock-status-filter" class="select" style="width:auto;">
+            <option value="all">Semua Status</option>
+            <option value="belum_diupload">Belum diupload</option>
+            <option value="terjadwal">Terjadwal</option>
+            <option value="uploading">Uploading</option>
+            <option value="sukses">Sukses</option>
+            <option value="gagal">Gagal</option>
         </select>
-        <select id="upload-account" class="select" style="width:120px; display:none;">
-            <option value="">Select Account...</option>
-        </select>
-        <button id="upload-all-btn" class="btn btn-pill">Upload Semua</button>
+        <button id="distribute-btn" class="btn btn-lime" disabled style="opacity:0.5;">Distribusikan & upload</button>
     </div>
   `;
   clipsPanel.appendChild(clipsHeader);
@@ -102,16 +102,61 @@ window.Components.StockClipView = function () {
   `;
   clipsPanel.appendChild(clipsSub);
 
+  // Clips list container wrapper (to hold list + action bar)
+  const clipsBodyWrapper = document.createElement('div');
+  clipsBodyWrapper.style.cssText = 'flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden;';
+  clipsPanel.appendChild(clipsBodyWrapper);
+
   // Clips list
   const clipsBody = document.createElement('div');
   clipsBody.style.cssText = 'flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px;';
-  clipsPanel.appendChild(clipsBody);
+  clipsBodyWrapper.appendChild(clipsBody);
+  
+  // Action bar
+  const actionBar = document.createElement('div');
+  actionBar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;background:#FFFFFF;border-top:1px solid #E5E7EB;padding:12px 24px;display:none;justify-content:space-between;align-items:center;box-shadow:0 -4px 10px rgba(0,0,0,0.05);z-index:10;';
+  actionBar.innerHTML = `
+    <span id="action-bar-text" style="font-size:14px;font-weight:500;color:#374151;">0 clip dipilih</span>
+    <button id="action-bar-btn" class="btn btn-lime">Distribusikan & upload</button>
+  `;
+  clipsBodyWrapper.appendChild(actionBar);
 
   layout.appendChild(jobsPanel);
   layout.appendChild(clipsPanel);
   section.appendChild(layout);
+  
+  let selectedClipIds = new Set();
+  
+  function updateActionBar() {
+      const distributeBtn = section.querySelector('#distribute-btn');
+      if (selectedClipIds.size > 0) {
+          distributeBtn.disabled = false;
+          distributeBtn.style.opacity = '1';
+          actionBar.style.display = 'flex';
+          actionBar.querySelector('#action-bar-text').textContent = \`\${selectedClipIds.size} clip dipilih\`;
+      } else {
+          distributeBtn.disabled = true;
+          distributeBtn.style.opacity = '0.5';
+          actionBar.style.display = 'none';
+      }
+  }
+  
+  section.querySelector('#distribute-btn').onclick = () => {
+      window.Components.DistributionPanel(selectedClipIds, () => {
+          selectedClipIds.clear();
+          refresh();
+      });
+  };
+  
+  actionBar.querySelector('#action-bar-btn').onclick = section.querySelector('#distribute-btn').onclick;
 
-  async function refresh() {
+  let currentCampaignFilter = null; // Used for deep linking from Campaign page
+
+  async function refresh(campaignId = null, autoSelectUnuploaded = false) {
+    if (campaignId !== null && typeof campaignId === 'string') {
+        currentCampaignFilter = campaignId;
+    }
+    
     if (!window.pywebview || !window.pywebview.api) return;
     try {
       const stats = await window.pywebview.api.get_dashboard_stats();
@@ -160,105 +205,92 @@ window.Components.StockClipView = function () {
 
       // ── Sync Campaign dropdown dengan daftar folder video ──
       const filterSelect = section.querySelector('#stock-campaign-filter');
-      filterSelect.innerHTML = '<option value="all">Campaign: All</option>';
+      filterSelect.innerHTML = '<option value="all">Video: All</option>';
       folders.forEach(f => {
         const opt = document.createElement('option');
         opt.value = f.id;
-        opt.textContent = 'Campaign: ' + (f.title.length > 20 ? f.title.substring(0, 20) + '...' : f.title);
+        opt.textContent = 'Video: ' + (f.title.length > 20 ? f.title.substring(0, 20) + '...' : f.title);
         filterSelect.appendChild(opt);
       });
       filterSelect.value = selectedFolderId && foldersById[selectedFolderId] ? selectedFolderId : 'all';
       filterSelect.onchange = () => {
         selectedFolderId = filterSelect.value === 'all' ? null : filterSelect.value;
+        currentCampaignFilter = null; // Clear campaign filter if user manually changes video folder
         refresh();
       };
 
       // ── Update Clips panel ──
       let clips = await window.pywebview.api.get_stock_clips(selectedFolderId);
+      
+      // Update filter dropdown with counts
+      const statusSummary = await window.pywebview.api.get_clip_upload_status_summary();
+      const statusSelect = section.querySelector('#stock-status-filter');
+      const currentStatusFilter = statusSelect.value;
+      
+      statusSelect.innerHTML = `
+          <option value="all">Semua Status</option>
+          <option value="belum_diupload">Belum diupload (${statusSummary.belum_diupload || 0})</option>
+          <option value="terjadwal">Terjadwal (${statusSummary.terjadwal || 0})</option>
+          <option value="uploading">Uploading (${statusSummary.uploading || 0})</option>
+          <option value="sukses">Sukses (${statusSummary.sukses || 0})</option>
+          <option value="gagal">Gagal (${statusSummary.gagal || 0})</option>
+      `;
+      statusSelect.value = currentStatusFilter;
+      statusSelect.onchange = () => refresh();
+
+      // Client-side filtering
+      if (currentStatusFilter !== 'all') {
+          clips = clips.filter(c => c.upload_status === currentStatusFilter);
+      }
+      if (currentCampaignFilter) {
+          clips = clips.filter(c => c.campaign_id === currentCampaignFilter);
+          // Update subtitle
+          const subTitleEl = section.querySelector('#clips-sub-title');
+          if (subTitleEl) subTitleEl.textContent = `Filtered by Campaign: ${currentCampaignFilter}`;
+      } else {
+          const subTitleEl = section.querySelector('#clips-sub-title');
+          if (subTitleEl) subTitleEl.textContent = selectedFolderId && foldersById[selectedFolderId] ? foldersById[selectedFolderId].title : 'All Video';
+      }
+
+      if (autoSelectUnuploaded) {
+          selectedClipIds.clear();
+          clips.forEach(c => {
+              if (c.upload_status === 'belum_diupload') {
+                  selectedClipIds.add(c.id);
+              }
+          });
+          updateActionBar();
+          if (selectedClipIds.size > 0) {
+              window.Components.DistributionPanel(selectedClipIds, () => {
+                  selectedClipIds.clear();
+                  refresh();
+              });
+          }
+      }
 
       const countEl = section.querySelector('#stock-clips-count');
       if (countEl) countEl.textContent = `Clips: ${clips.length}`;
 
-      const subTitleEl = section.querySelector('#clips-sub-title');
       const subCountEl = section.querySelector('#clips-sub-count');
       const subSizeEl = section.querySelector('#clips-sub-size');
-      if (subTitleEl) subTitleEl.textContent = selectedFolderId && foldersById[selectedFolderId] ? foldersById[selectedFolderId].title : 'All Video';
+      
       if (subCountEl) subCountEl.textContent = `Clips: ${clips.length}`;
       if (subSizeEl) subSizeEl.textContent = `Size: ${stats.storageUsed}`;
-
-      // Setup Upload Semua button
-      const uploadAllBtn = section.querySelector('#upload-all-btn');
-      const platformSelect = section.querySelector('#upload-platform');
-      const accountSelect = section.querySelector('#upload-account');
-
-      platformSelect.addEventListener('change', async () => {
-          if (platformSelect.value === 'repliz') {
-              accountSelect.style.display = 'block';
-              accountSelect.innerHTML = '<option value="">Loading...</option>';
-              try {
-                  const res = await window.pywebview.api.get_repliz_accounts();
-                  accountSelect.innerHTML = '<option value="">Select Account...</option>';
-                  if (res && res.status === 'ok') {
-                      res.accounts.forEach(acc => {
-                          const opt = document.createElement('option');
-                          opt.value = acc._id;
-                          opt.textContent = acc.name + ' (' + acc.type + ')';
-                          accountSelect.appendChild(opt);
-                      });
-                  } else {
-                      accountSelect.innerHTML = '<option value="">Failed to load</option>';
-                  }
-              } catch(e) {
-                  accountSelect.innerHTML = '<option value="">Error</option>';
-              }
-          } else {
-              accountSelect.style.display = 'none';
-          }
-      });
-
-      const newBtn = uploadAllBtn.cloneNode(true);
-      uploadAllBtn.parentNode.replaceChild(newBtn, uploadAllBtn);
-
-      newBtn.addEventListener('click', async () => {
-         if (clips.length === 0) return;
-         const platform = platformSelect.value;
-         const accountId = accountSelect.value;
-
-         if (platform === 'repliz' && !accountId) {
-             alert('Please select a Repliz account first.');
-             return;
-         }
-
-         if (!confirm(`Upload ${clips.length} clips to ${platform}?`)) return;
-
-         let success = 0, fail = 0;
-         newBtn.textContent = 'Uploading...';
-         newBtn.disabled = true;
-
-         for (let c of clips) {
-             try {
-                const res = await window.pywebview.api.upload_clip(c.path, platform, {title: c.title, account_id: accountId});
-                if (res && res.status === 'success') {
-                    success++;
-                } else {
-                    fail++;
-                    console.error("Upload failed for", c.title, res?.message);
-                }
-             } catch(e) {
-                fail++;
-             }
-         }
-
-         newBtn.textContent = 'Upload Semua';
-         newBtn.disabled = false;
-         alert(`Upload complete!\nSuccess: ${success}\nFailed: ${fail}`);
-      });
 
       clipsBody.innerHTML = '';
 
       if (clips.length === 0) {
         clipsBody.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-size:13px;">No clips found.</div>';
       } else {
+        // Build badges styles
+        const badgeStyles = {
+            'belum_diupload': { bg: '#F3F4F6', text: '#374151' },
+            'terjadwal': { bg: '#FEF3C7', text: '#92400E' },
+            'uploading': { bg: '#DBEAFE', text: '#1E40AF' },
+            'sukses': { bg: '#DCFCE7', text: '#166534' },
+            'gagal': { bg: '#FEE2E2', text: '#991B1B' }
+        };
+
         clips.forEach(c => {
           const clip = window.FileItem.v3({
             title: c.title,
@@ -273,12 +305,12 @@ window.Components.StockClipView = function () {
               await window.pywebview.api.play_clip(c.path);
             },
             onUpload: async () => {
-              const platform = platformSelect.value;
-              const accountId = accountSelect.value;
-
-              if (platform === 'repliz' && !accountId) {
-                  alert('Please select a Repliz account first.');
-                  return;
+              const platform = prompt('Masukkan platform (tiktok / youtube / repliz):', 'repliz');
+              if (!platform) return;
+              
+              let accountId = null;
+              if (platform === 'repliz') {
+                  accountId = prompt('Masukkan Repliz Account ID (kosongkan jika tidak tahu):', '');
               }
 
               if (confirm(`Upload this clip to ${platform}?`)) {
@@ -296,6 +328,39 @@ window.Components.StockClipView = function () {
             }
           });
 
+          // Create wrapper for checkbox + clip item
+          const rowWrapper = document.createElement('div');
+          rowWrapper.style.cssText = 'display:flex;align-items:center;gap:12px;width:100%;';
+          
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.style.cssText = 'width:16px;height:16px;cursor:pointer;flex-shrink:0;';
+          checkbox.checked = selectedClipIds.has(c.id);
+          
+          checkbox.addEventListener('change', () => {
+              if (checkbox.checked) {
+                  selectedClipIds.add(c.id);
+              } else {
+                  selectedClipIds.delete(c.id);
+              }
+              updateActionBar();
+          });
+          
+          rowWrapper.appendChild(checkbox);
+          
+          // Append badge to the info area of FileItem
+          const infoArea = clip.querySelector('.fi-info') || clip.querySelector('.file-sub');
+          if (infoArea) {
+              const badge = document.createElement('span');
+              const style = badgeStyles[c.upload_status] || badgeStyles['belum_diupload'];
+              badge.style.cssText = \`background:\${style.bg};color:\${style.text};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:8px;text-transform:uppercase;\`;
+              badge.textContent = c.upload_status.replace('_', ' ');
+              infoArea.appendChild(badge);
+          }
+          
+          clip.style.flex = '1';
+          rowWrapper.appendChild(clip);
+
           const actionsDiv = clip.querySelector('.fi-actions');
           if (actionsDiv) {
               const folderBtn = document.createElement('button');
@@ -310,9 +375,11 @@ window.Components.StockClipView = function () {
               actionsDiv.appendChild(folderBtn);
           }
 
-          clipsBody.appendChild(clip);
+          clipsBody.appendChild(rowWrapper);
         });
       }
+      
+      updateActionBar();
 
     } catch(e) {
       console.error("Failed to load stock clips", e);

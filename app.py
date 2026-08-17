@@ -1065,6 +1065,9 @@ class WebAPI:
                             "date": stat.st_mtime * 1000,
                             "duration": f"{duration_sec // 60:02d}:{duration_sec % 60:02d}",
                             "path": str(mp4_path),
+                            "upload_status": cdata.get("upload_status", "belum_diupload"),
+                            "conflict_group_id": cdata.get("conflict_group_id"),
+                            "campaign_id": vdata.get("campaign_id")
                         })
                     except Exception as e:
                         print(f"Error parsing {clip_json}: {e}")
@@ -1085,6 +1088,9 @@ class WebAPI:
                                 "date": stat.st_mtime * 1000,
                                 "duration": "00:00",
                                 "path": str(mp4_path),
+                                "upload_status": cdata.get("upload_status", "belum_diupload"),
+                                "conflict_group_id": cdata.get("conflict_group_id"),
+                                "campaign_id": cdata.get("campaign_id")
                             })
                 except Exception as e:
                     print(f"Error parsing legacy {video_meta_file}: {e}")
@@ -1272,6 +1278,207 @@ class WebAPI:
             print(f"Error starting install: {e}")
             return {"status": "error", "message": str(e)}
 
+    def preview_distribution(self, clip_ids, campaign_id=None, max_per_account_per_day=2):
+        """Mendeteksi campaign & mensimulasikan penjadwalan klip berdasarkan limit akun."""
+        if not clip_ids:
+            return {"status": "error", "message": "No clips selected"}
+            
+        try:
+            max_per_account_per_day = int(max_per_account_per_day)
+        except ValueError:
+            max_per_account_per_day = 2
+
+        all_clips = self.get_stock_clips()
+        selected_clips = [c for c in all_clips if c["id"] in clip_ids]
+        
+        if not selected_clips:
+             return {"status": "error", "message": "Selected clips not found"}
+
+        # Auto-detect campaign if not provided
+        auto_detected = False
+        if not campaign_id:
+            campaign_ids = list(set(c.get("campaign_id") for c in selected_clips))
+            if len(campaign_ids) == 1 and campaign_ids[0]:
+                campaign_id = campaign_ids[0]
+                auto_detected = True
+            else:
+                return {
+                    "status": "mixed_or_missing_campaign", 
+                    "message": "Clip yang dipilih berasal dari campaign berbeda / belum ada campaign. Pilih campaign secara manual."
+                }
+                
+        # Ambil daftar account
+        account_units = []
+        if campaign_id and campaign_id != "default":
+            cfg = self._get_cfg()
+            campaigns = cfg.get("campaigns", [])
+            camp = next((c for c in campaigns if c.get("id") == campaign_id), None)
+            if camp:
+                campaign_name = camp.get("name", "Unknown Campaign")
+                account_ids = camp.get("account_ids", [])
+                
+                # Fetch full account details
+                repliz_res = self.get_repliz_accounts()
+                if repliz_res.get("status") == "ok":
+                    all_accs = repliz_res.get("accounts", [])
+                    for acc in all_accs:
+                        if acc.get("_id") in account_ids:
+                            account_units.append(acc)
+            else:
+                # Fallback jika campaign tidak ditemukan
+                campaign_name = "Unknown Campaign"
+        else:
+            campaign_name = "Semua Akun (Default)"
+            repliz_res = self.get_repliz_accounts()
+            if repliz_res.get("status") == "ok":
+                account_units = repliz_res.get("accounts", [])
+                
+        if not account_units:
+            return {"status": "error", "message": "Tidak ada akun tersedia untuk campaign ini"}
+
+        # Algoritma Distribusi
+        # 1. groups by conflict_group_id
+        from collections import defaultdict
+        groups_dict = defaultdict(list)
+        for clip in selected_clips:
+            cg_id = clip.get("conflict_group_id")
+            if cg_id is None:
+                # Tiap clip jadi grup sendiri
+                cg_id = f"unique_{clip['id']}"
+            groups_dict[cg_id].append(clip)
+            
+        groups = list(groups_dict.values())
+        groups.sort(key=len, reverse=True)
+        
+        load_map = defaultdict(int)
+        from datetime import datetime, timedelta
+        today = datetime.now().date()
+        assignments = []
+        
+        for group in groups:
+            used_today = set()
+            for clip in group:
+                day = today
+                while True:
+                    # Cari akun dengan load terendah yang belum dipakai hari ini untuk grup ini (walau grup = 1 clip)
+                    available_accs = [acc for acc in account_units if acc["_id"] not in used_today]
+                    if not available_accs:
+                         # Skip if we somehow have no accounts available at all
+                         if len(account_units) == 0:
+                             break
+                         # Kalau semua akun habis dipakai di hari yang sama untuk *clip ini*, 
+                         # kita tetap harus memajukan hari.
+                         day += timedelta(days=1)
+                         used_today = set()
+                         continue
+                         
+                    # Pilih candidate
+                    candidate = min(available_accs, key=lambda a: load_map[(a["_id"], day)])
+                    
+                    if load_map[(candidate["_id"], day)] < max_per_account_per_day:
+                        scheduled_dt = datetime.combine(day, datetime.strptime("09:00", "%H:%M").time())
+                        assignments.append({
+                            "clip_id": clip["id"],
+                            "clip_title": clip["title"],
+                            "account_id": candidate["_id"],
+                            "account_name": candidate["name"],
+                            "platform": candidate.get("type", "repliz"),
+                            "scheduled_at": scheduled_dt.isoformat(),
+                            "clip_path": clip["path"] # Added for convenience
+                        })
+                        load_map[(candidate["_id"], day)] += 1
+                        used_today.add(candidate["_id"])
+                        break
+                    else:
+                        day += timedelta(days=1)
+                        used_today = set() # reset set used_today untuk hari baru
+                        
+        overflow_count = sum(1 for a in assignments if datetime.fromisoformat(a["scheduled_at"]).date() > today)
+        overflow_note = f"{overflow_count} clip lainnya otomatis dijadwalkan ke hari berikutnya karena kapasitas akun penuh hari ini" if overflow_count > 0 else ""
+        
+        return {
+            "status": "ok",
+            "campaign_id": campaign_id,
+            "campaign_name": campaign_name,
+            "auto_detected": auto_detected,
+            "assignments": assignments,
+            "overflow_count": overflow_count,
+            "overflow_note": overflow_note
+        }
+
+    def confirm_distribution(self, assignments):
+        """Menerima hasil preview dan memperbarui metadata data.json."""
+        import uuid
+        from datetime import datetime
+        
+        updated_clips = 0
+        try:
+            # We need to find data.json for each clip.
+            # Clip path can be found in `get_stock_clips()`
+            all_clips = self.get_stock_clips()
+            clip_path_map = {c["id"]: c["path"] for c in all_clips}
+            
+            for asn in assignments:
+                clip_id = asn.get("clip_id")
+                clip_path_str = clip_path_map.get(clip_id) or asn.get("clip_path")
+                if not clip_path_str:
+                     continue
+                     
+                clip_path = Path(clip_path_str)
+                data_json_path = clip_path.parent / "data.json"
+                
+                # Coba baca data.json
+                if not data_json_path.exists():
+                     # Fallback to parent dir if it's legacy
+                     data_json_path = clip_path.parent.parent / "data.json"
+                     if not data_json_path.exists():
+                         continue
+
+                with open(data_json_path, 'r', encoding='utf-8') as f:
+                     cdata = json.load(f)
+                     
+                cdata["upload_status"] = "terjadwal"
+                if "scheduled_uploads" not in cdata:
+                     cdata["scheduled_uploads"] = []
+                     
+                cdata["scheduled_uploads"].append({
+                    "id": f"sched_{uuid.uuid4().hex[:8]}",
+                    "campaign_id": asn.get("campaign_id", ""),
+                    "account_id": asn.get("account_id"),
+                    "platform": asn.get("platform", "repliz"),
+                    "scheduled_at": asn.get("scheduled_at"),
+                    "status": "terjadwal",
+                    "attempted_at": None,
+                    "error_message": None
+                })
+                
+                with open(data_json_path, 'w', encoding='utf-8') as f:
+                     json.dump(cdata, f, indent=2, ensure_ascii=False)
+                     
+                updated_clips += 1
+                
+            return {"status": "ok", "message": f"{updated_clips} clips scheduled"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def get_clip_upload_status_summary(self):
+        """Return summary of upload statuses across all clips."""
+        all_clips = self.get_stock_clips()
+        summary = {
+            "belum_diupload": 0,
+            "terjadwal": 0,
+            "uploading": 0,
+            "sukses": 0,
+            "gagal": 0
+        }
+        for c in all_clips:
+             status = c.get("upload_status", "belum_diupload")
+             if status in summary:
+                 summary[status] += 1
+             else:
+                 summary["belum_diupload"] += 1
+        return summary
+
     # --- END NEW ENDPOINTS ---
 
     def _get_cfg_manager(self):
@@ -1291,6 +1498,83 @@ class WebAPI:
         return {"Authorization": f"Bearer {api_key}"}
 
 
+def _upload_scheduler(api):
+    import time
+    from datetime import datetime
+    while True:
+        try:
+            all_clips = api.get_stock_clips()
+            now = datetime.now()
+            
+            for clip in all_clips:
+                clip_path = Path(clip["path"])
+                data_json_path = clip_path.parent / "data.json"
+                if not data_json_path.exists():
+                     data_json_path = clip_path.parent.parent / "data.json"
+                     if not data_json_path.exists():
+                         continue
+                
+                try:
+                    with open(data_json_path, 'r', encoding='utf-8') as f:
+                        cdata = json.load(f)
+                except Exception:
+                    continue
+                    
+                scheduled_uploads = cdata.get("scheduled_uploads", [])
+                needs_save = False
+                
+                for entry in scheduled_uploads:
+                    if entry.get("status") == "terjadwal":
+                        sched_dt = entry.get("scheduled_at")
+                        if sched_dt:
+                            dt = datetime.fromisoformat(sched_dt)
+                            if dt <= now:
+                                # Set status ke uploading
+                                entry["status"] = "uploading"
+                                entry["attempted_at"] = now.isoformat()
+                                cdata["upload_status"] = "uploading"
+                                needs_save = True
+                                
+                                # Simpan status uploading dulu
+                                with open(data_json_path, 'w', encoding='utf-8') as f:
+                                    json.dump(cdata, f, indent=2, ensure_ascii=False)
+                                
+                                # Proses upload blocking
+                                options = {
+                                    "title": clip["title"],
+                                    "account_id": entry.get("account_id")
+                                }
+                                res = api.upload_clip(str(clip_path), entry.get("platform", "repliz"), options)
+                                
+                                # Update hasil
+                                if res.get("status") == "success":
+                                    entry["status"] = "sukses"
+                                else:
+                                    entry["status"] = "gagal"
+                                    entry["error_message"] = res.get("message", "Unknown error")
+                                    
+                                # Hitung ulang status upload level clip
+                                statuses = [e.get("status") for e in scheduled_uploads]
+                                if "uploading" in statuses:
+                                    cdata["upload_status"] = "uploading"
+                                elif "terjadwal" in statuses:
+                                    cdata["upload_status"] = "terjadwal"
+                                elif "gagal" in statuses:
+                                    cdata["upload_status"] = "gagal"
+                                else:
+                                    cdata["upload_status"] = "sukses"
+                                    
+                                needs_save = True
+                                
+                if needs_save:
+                    with open(data_json_path, 'w', encoding='utf-8') as f:
+                        json.dump(cdata, f, indent=2, ensure_ascii=False)
+                        
+        except Exception as e:
+            print(f"Scheduler error: {e}")
+            
+        time.sleep(60)
+
 def main():
     api = WebAPI()
     bundle_dir = get_bundle_dir()
@@ -1298,6 +1582,11 @@ def main():
     
     # Optional: ensure output dir exists
     os.makedirs(api.output_dir, exist_ok=True)
+    
+    # Start background scheduler
+    import threading
+    t = threading.Thread(target=_upload_scheduler, args=(api,), daemon=True)
+    t.start()
     
     # Configure pywebview window to match Figma designs (which is ~1440x900)
     window = webview.create_window(
