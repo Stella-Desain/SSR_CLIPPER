@@ -511,6 +511,11 @@ class WebAPI:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    def read_file_as_base64(self, path):
+        import base64
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+
     def extract_campaign_brief(self, content_type, content):
         cfg = self._get_cfg()
         provider = cfg.get("ai_providers", {}).get("brief_extractor", {})
