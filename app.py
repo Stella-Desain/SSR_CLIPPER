@@ -884,6 +884,23 @@ class WebAPI:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    def browse_brief_file(self):
+        """File dialog khusus brief campaign — terima gambar & dokumen, tanpa copy ke watermarks."""
+        import webview
+        try:
+            if not webview.windows:
+                return None
+            result = webview.windows[0].create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=False,
+                file_types=('Brief Files (*.png;*.jpg;*.jpeg;*.webp;*.pdf;*.docx)',)
+            )
+            if result and len(result) > 0:
+                return {"status": "ok", "path": result[0]}
+            return {"status": "cancelled"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     def browse_watermark_image(self):
         """Opens file dialog to pick an image and copies it to assets/watermarks"""
         import webview
@@ -1384,7 +1401,8 @@ class WebAPI:
                             "account_name": candidate["name"],
                             "platform": candidate.get("type", "repliz"),
                             "scheduled_at": scheduled_dt.isoformat(),
-                            "clip_path": clip["path"] # Added for convenience
+                            "clip_path": clip["path"], # Added for convenience
+                            "campaign_id": campaign_id  # BARU — supaya konsisten sampai ke scheduled_uploads
                         })
                         load_map[(candidate["_id"], day)] += 1
                         used_today.add(candidate["_id"])

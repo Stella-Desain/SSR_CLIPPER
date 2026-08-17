@@ -303,14 +303,14 @@ async function refreshCampaignList() {
     
     stokBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      setActiveView('distribution');
-      // Set filter to this campaign in distribution if possible
+      setActiveView('stock-clip');
+      stockClipView.refresh(c.id, false);
     });
 
     uploadBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      setActiveView('distribution');
-      // Trigger upload flow for this campaign
+      setActiveView('stock-clip');
+      stockClipView.refresh(c.id, true);
     });
 
     btnsRow.appendChild(stokBtn);
@@ -430,8 +430,14 @@ async function openCampaignEdit(id = null) {
           f.cardBtnsDiv.style.display = 'flex';
           
           // Re-attach button events for edit view
-          f.stokBtn.onclick = () => { setActiveView('distribution'); };
-          f.uploadBtn.onclick = () => { setActiveView('distribution'); };
+          f.stokBtn.onclick = () => { 
+            setActiveView('stock-clip'); 
+            stockClipView.refresh(id, false);
+          };
+          f.uploadBtn.onclick = () => { 
+            setActiveView('stock-clip');
+            stockClipView.refresh(id, true);
+          };
       }
     }
   }
@@ -533,7 +539,7 @@ campaignEditView.fields.docFile.parentElement.addEventListener('click', async (e
     e.preventDefault(); 
     try {
         // Reuse browse_watermark_image (but ideally needs a specific file picker in python backend)
-        const res = await window.pywebview.api.browse_watermark_image(); 
+        const res = await window.pywebview.api.browse_brief_file(); 
         if (res && res.status === 'ok') {
             await runExtraction({ text: null, filePath: res.path });
         }
