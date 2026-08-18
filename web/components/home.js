@@ -124,6 +124,39 @@ window.Components.HomeView = function () {
   const hookToggle      = makeToggle('Hook Maker',       'Loading...', 'hook-maker',       true);
   const titleToggle     = makeToggle('YT Title Maker',   'Loading...', 'yt-title-maker',   true);
 
+  // Subtitle Style selector (shown when Caption Maker is ON)
+  const subtitleStyleItem = document.createElement('div');
+  subtitleStyleItem.className = 'toggle-item';
+  subtitleStyleItem.id = 'subtitle-style-container';
+  const styleLeft = document.createElement('div');
+  const styleLabel = document.createElement('div');
+  styleLabel.className = 'toggle-item-label';
+  styleLabel.textContent = 'Subtitle Style';
+  const styleSub = document.createElement('div');
+  styleSub.style.cssText = 'font-size:12px;color:var(--text-secondary);margin-top:2px;';
+  styleSub.textContent = 'Visual style for captions';
+  styleLeft.appendChild(styleLabel);
+  styleLeft.appendChild(styleSub);
+
+  const subtitleStyleSelect = document.createElement('select');
+  subtitleStyleSelect.className = 'select';
+  subtitleStyleSelect.id = 'subtitle-style';
+  subtitleStyleSelect.style.cssText = 'width:auto;min-width:140px;height:32px;font-size:12px;';
+  subtitleStyleSelect.innerHTML = `
+    <option value="capcut" selected>CapCut (Default)</option>
+    <option value="minimal">Minimal</option>
+    <option value="bold_shadow">Bold Drop Shadow</option>
+    <option value="hormozi">Hormozi Style</option>
+    <option value="split_color">Split Color</option>
+  `;
+
+  subtitleStyleItem.appendChild(styleLeft);
+  subtitleStyleItem.appendChild(subtitleStyleSelect);
+
+  captionToggle.input.addEventListener('change', () => {
+    subtitleStyleItem.style.display = captionToggle.input.checked ? '' : 'none';
+  });
+
   // Portrait is always on — hide the toggle item from UI
   portraitToggle.element.style.display = 'none';
   portraitToggle.input.checked = true;
@@ -131,6 +164,7 @@ window.Components.HomeView = function () {
   toggles.appendChild(portraitToggle.element);
   toggles.appendChild(highlightToggle.element);
   toggles.appendChild(captionToggle.element);
+  toggles.appendChild(subtitleStyleItem);
   toggles.appendChild(hookToggle.element);
   toggles.appendChild(titleToggle.element);
   configBody.appendChild(toggles);
@@ -341,9 +375,13 @@ window.Components.HomeView = function () {
           if (config.num_clips !== undefined) clipsInput.value = config.num_clips;
           if (config.portrait !== undefined) portraitToggle.input.checked = config.portrait;
           if (config.highlight_finder !== undefined) highlightToggle.input.checked = config.highlight_finder;
-          if (config.add_captions !== undefined) captionToggle.input.checked = config.add_captions;
+          if (config.add_captions !== undefined) {
+            captionToggle.input.checked = config.add_captions;
+            subtitleStyleItem.style.display = config.add_captions ? '' : 'none';
+          }
           if (config.add_hook !== undefined) hookToggle.input.checked = config.add_hook;
           if (config.yt_title_maker !== undefined) titleToggle.input.checked = config.yt_title_maker;
+          if (config.subtitle_style) subtitleStyleSelect.value = config.subtitle_style;
         }
       } catch (err) {}
     }
@@ -357,7 +395,8 @@ window.Components.HomeView = function () {
       highlight_finder: highlightToggle.input.checked,
       add_captions: captionToggle.input.checked,
       add_hook: hookToggle.input.checked,
-      yt_title_maker: titleToggle.input.checked
+      yt_title_maker: titleToggle.input.checked,
+      subtitle_style: subtitleStyleSelect.value
     };
     try {
       const res = await window.pywebview.api.save_default_config(settings);
@@ -379,6 +418,7 @@ window.Components.HomeView = function () {
       start: startBtn,
       clips: clipsInput,
       subtitle: subtitleSelect,
+      subtitleStyle: subtitleStyleSelect,
       portrait: portraitToggle.input,
       highlight: highlightToggle.input,
       captions: captionToggle.input,

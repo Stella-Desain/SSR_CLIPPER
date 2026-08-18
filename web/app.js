@@ -284,7 +284,8 @@ async function start() {
       homeView.fields.portrait.checked,
       homeView.fields.highlight.checked,
       homeView.fields.ytTitle.checked,
-      homeView.fields.campaign ? homeView.fields.campaign.value : ""
+      homeView.fields.campaign ? homeView.fields.campaign.value : "",
+      homeView.fields.subtitleStyle ? homeView.fields.subtitleStyle.value : "capcut"
     );
     if (res && res.status === 'started') {
       poll();
@@ -477,9 +478,6 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
   } else {
       finalWhisperModel = "api";
   }
-
-  const cpUrl = aiView.fields.cpUrl ? aiView.fields.cpUrl.value.trim() : "";
-  const cpKey = aiView.fields.cpKey ? aiView.fields.cpKey.value.trim() : "";
 
   const payload = {
     _provider_type: "custom",

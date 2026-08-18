@@ -15,6 +15,30 @@
 </head>
 <body>
   <div id="app"></div>
+  <script>
+    // Capture ALL frontend JS errors → sent to Python error.log
+    window.onerror = function(message, source, lineno, colno, error) {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.log_frontend_error(
+          String(message),
+          String(source),
+          lineno || 0,
+          colno || 0,
+          error && error.stack ? String(error.stack) : ''
+        );
+      }
+      return false; // still show in browser console
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.log_frontend_error(
+          'Unhandled Promise rejection: ' + (e.reason ? String(e.reason) : 'unknown'),
+          'promise', 0, 0,
+          e.reason && e.reason.stack ? String(e.reason.stack) : ''
+        );
+      }
+    });
+  </script>
   <script src="components/header.js"></script>
   <script src="components/file-item.js"></script>
   <script src="components/dashboard.js"></script>

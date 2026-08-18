@@ -6,10 +6,51 @@ import json
 import os
 import sys
 import subprocess
+import logging
+import traceback
+from datetime import datetime
 from pathlib import Path
 from config.config_manager import ConfigManager
 from utils.helpers import get_app_dir, get_bundle_dir, get_ffmpeg_path, get_ytdlp_path
 from clipper_core import AutoClipperCore
+
+# ── Error Logging Setup ──
+_log_file = Path(__file__).parent / "error.log"
+
+def _setup_logger():
+    logger = logging.getLogger("ssr_clipper")
+    logger.setLevel(logging.DEBUG)
+    if not logger.handlers:
+        fh = logging.FileHandler(_log_file, encoding="utf-8")
+        fh.setLevel(logging.DEBUG)
+        fmt = logging.Formatter(
+            "[%(asctime)s] %(levelname)s — %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
+    return logger
+
+app_logger = _setup_logger()
+
+def log_error(msg, exc=None):
+    """Log error with optional exception traceback."""
+    if exc:
+        tb = traceback.format_exc()
+        app_logger.error(f"{msg}\n{tb}")
+    else:
+        app_logger.error(msg)
+
+# Redirect unhandled exceptions to error.log
+def _global_except_hook(exc_type, exc_value, exc_tb):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    app_logger.critical(f"UNHANDLED EXCEPTION:\n{tb_str}")
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+sys.excepthook = _global_except_hook
 
 class ReplizUploaderAdapter:
     def __init__(self, access_key, secret_key):
@@ -38,7 +79,14 @@ class WebAPI:
     def get_progress(self):
         return {"status": self.status, "progress": self.progress}
 
-
+    def log_frontend_error(self, message, source="", lineno=0, colno=0, stack=""):
+        """Called from JS window.onerror to record frontend errors in error.log"""
+        log_error(
+            f"[FRONTEND] {message}\n"
+            f"  Source: {source}:{lineno}:{colno}\n"
+            f"  Stack: {stack}"
+        )
+        return {"status": "ok"}
 
     def get_ai_settings(self):
         cfg = self._get_cfg()
@@ -189,7 +237,7 @@ class WebAPI:
         cfg_mgr.save()
         return {"status": "saved"}
 
-    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False, highlight_finder=True, yt_title_maker=True, campaign_id=None):
+    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False, highlight_finder=True, yt_title_maker=True, campaign_id=None, subtitle_style="capcut"):
         if self.thread and self.thread.is_alive():
             return {"status": "busy"}
         
@@ -206,13 +254,13 @@ class WebAPI:
             
         self.thread = threading.Thread(
             target=self._run,
-            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang, bool(portrait), bool(highlight_finder), bool(yt_title_maker), campaign_id),
+            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang, bool(portrait), bool(highlight_finder), bool(yt_title_maker), campaign_id, subtitle_style),
             daemon=True,
         )
         self.thread.start()
         return {"status": "started"}
 
-    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang, portrait, highlight_finder, yt_title_maker):
+    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang, portrait, highlight_finder, yt_title_maker, campaign_id=None, subtitle_style="capcut"):
         def log_cb(msg):
             self.status = str(msg)
             if self.current_job:
@@ -271,6 +319,7 @@ class WebAPI:
             ai_providers=ai_providers,
             subtitle_language=subtitle_lang,
             local_whisper_settings=local_whisper_settings,
+            subtitle_style=subtitle_style,
             log_callback=log_cb,
             progress_callback=lambda s, p=None: progress_cb(p if p is not None else 0.0),
         )
@@ -460,7 +509,7 @@ class WebAPI:
         new_camp = dict(payload)
         new_camp["id"] = campaign_id
         cfg["campaigns"].append(new_camp)
-        self._get_cfg_manager().save(cfg)
+        self._get_cfg_manager().save_config(cfg)
         return {"status": "ok", "campaign": new_camp}
 
     def update_campaign(self, campaign_id, payload):
@@ -473,7 +522,7 @@ class WebAPI:
                 if "banner_path" in camp and "banner_path" not in updated:
                     updated["banner_path"] = camp["banner_path"]
                 cfg["campaigns"][i] = updated
-                self._get_cfg_manager().save(cfg)
+                self._get_cfg_manager().save_config(cfg)
                 return {"status": "ok", "campaign": updated}
         return {"status": "error", "message": "Campaign not found"}
 
@@ -481,7 +530,7 @@ class WebAPI:
         cfg = self._get_cfg()
         campaigns = cfg.get("campaigns", [])
         cfg["campaigns"] = [c for c in campaigns if c.get("id") != campaign_id]
-        self._get_cfg_manager().save(cfg)
+        self._get_cfg_manager().save_config(cfg)
         return {"status": "ok"}
 
     def upload_campaign_banner(self, campaign_id, file_path):
@@ -505,7 +554,7 @@ class WebAPI:
             for c in campaigns:
                 if c.get("id") == campaign_id:
                     c["banner_path"] = rel_path
-                    self._get_cfg_manager().save(cfg)
+                    self._get_cfg_manager().save_config(cfg)
                     break
             return {"status": "ok", "banner_path": rel_path}
         except Exception as e:
@@ -629,7 +678,7 @@ class WebAPI:
                 "opacity": float(settings.get("opacity", 0.8)),
                 "scale": float(settings.get("scale", 0.15))
             }
-            self._get_cfg_manager().save(cfg)
+            self._get_cfg_manager().save_config(cfg)
             return {"status": "ok"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -656,7 +705,7 @@ class WebAPI:
                 "size": float(settings.get("size", 0.03)),
                 "opacity": float(settings.get("opacity", 0.7))
             }
-            self._get_cfg_manager().save(cfg)
+            self._get_cfg_manager().save_config(cfg)
             return {"status": "ok"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -700,7 +749,7 @@ class WebAPI:
                 "position_x": float(settings.get("position_x", 0.5)),
                 "position_y": float(settings.get("position_y", 0.333))
             }
-            self._get_cfg_manager().save(cfg)
+            self._get_cfg_manager().save_config(cfg)
             return {"status": "ok"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -725,7 +774,7 @@ class WebAPI:
             cfg["gpu_acceleration"] = {
                 "enabled": bool(settings.get("gpu_enabled", False))
             }
-            self._get_cfg_manager().save(cfg)
+            self._get_cfg_manager().save_config(cfg)
             return {"status": "ok"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -767,7 +816,7 @@ class WebAPI:
             Path(output_dir).mkdir(parents=True, exist_ok=True)
             cfg = self._get_cfg()
             cfg["output_dir"] = output_dir
-            self._get_cfg_manager().save(cfg)
+            self._get_cfg_manager().save_config(cfg)
             self.output_dir = output_dir
             return {"status": "ok"}
         except Exception as e:
@@ -1589,7 +1638,7 @@ def _upload_scheduler(api):
                         json.dump(cdata, f, indent=2, ensure_ascii=False)
                         
         except Exception as e:
-            print(f"Scheduler error: {e}")
+            log_error(f"Scheduler error: {e}", e)
             
         time.sleep(60)
 
@@ -1622,4 +1671,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    app_logger.info("=" * 60)
+    app_logger.info(f"SSR_CLIPPER starting at {datetime.now().isoformat()}")
+    try:
+        main()
+    except Exception as e:
+        log_error("Fatal error in main()", e)
+        raise

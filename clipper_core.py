@@ -103,6 +103,7 @@ class AutoClipperCore:
         ai_providers: dict = None,
         subtitle_language: str = "id",
         local_whisper_settings: dict = None,
+        subtitle_style: str = "capcut",
         log_callback=None,
         progress_callback=None,
         token_callback=None,
@@ -116,6 +117,8 @@ class AutoClipperCore:
             "compute_type": "auto"
         }
         self._local_whisper_model = None  # lazy loaded
+        
+        self.subtitle_style = subtitle_style
         
         # Multi-provider support
         self.ai_providers = ai_providers or {}
@@ -3549,9 +3552,23 @@ Transcript:
         return hook_duration
     
     
-    def create_ass_subtitle_capcut(self, transcript, output_path: str, time_offset: float = 0):
-        """Create ASS subtitle file with CapCut-style word-by-word highlighting"""
+    def create_ass_subtitle_capcut(self, transcript, output_path: str, time_offset: float = 0, style: str = None):
+        """Create ASS subtitle file with various subtitle styles"""
+        style = style or self.subtitle_style
+        builders = {
+            'capcut': self._build_ass_capcut,
+            'minimal': self._build_ass_minimal,
+            'bold_shadow': self._build_ass_bold_shadow,
+            'hormozi': self._build_ass_hormozi,
+            'split_color': self._build_ass_split_color,
+        }
+        builder = builders.get(style, self._build_ass_capcut)
+        ass_content = builder(transcript, time_offset)
         
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(ass_content)
+
+    def _build_ass_capcut(self, transcript, time_offset: float) -> str:
         # ASS header - CapCut style: white text, yellow highlight, black outline
         ass_content = """[Script Info]
 Title: Auto-generated captions
@@ -3625,8 +3642,207 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         for event in events:
             ass_content += f"Dialogue: 0,{event['start']},{event['end']},Default,,0,0,0,,{event['text']}\n"
         
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(ass_content)
+        return ass_content
+
+    def _build_ass_minimal(self, transcript, time_offset: float) -> str:
+        ass_content = """[Script Info]
+Title: Auto-generated captions
+ScriptType: v4.00+
+WrapStyle: 0
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,55,&H00CCCCCC,&H000000FF,&H40000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,50,50,420,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+        events = []
+        if hasattr(transcript, 'words') and transcript.words:
+            words = transcript.words
+            chunk_size = 5
+            for i in range(0, len(words), chunk_size):
+                chunk = words[i:i + chunk_size]
+                if not chunk: continue
+                chunk_start = chunk[0].start + time_offset
+                chunk_end = chunk[-1].end + time_offset
+                text_parts = [w.word.strip().lower() for w in chunk]
+                text = " ".join(text_parts)
+                events.append({
+                    'start': self.format_time(chunk_start),
+                    'end': self.format_time(chunk_end),
+                    'text': text
+                })
+        elif hasattr(transcript, 'segments') and transcript.segments:
+            for segment in transcript.segments:
+                start = segment.get('start', 0) + time_offset
+                end = segment.get('end', 0) + time_offset
+                text = segment.get('text', '').strip().lower()
+                if text:
+                    events.append({
+                        'start': self.format_time(start),
+                        'end': self.format_time(end),
+                        'text': text
+                    })
+        for event in events:
+            ass_content += f"Dialogue: 0,{event['start']},{event['end']},Default,,0,0,0,,{event['text']}\n"
+        return ass_content
+
+    def _build_ass_bold_shadow(self, transcript, time_offset: float) -> str:
+        ass_content = """[Script Info]
+Title: Auto-generated captions
+ScriptType: v4.00+
+WrapStyle: 0
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Impact,70,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,4,2,50,50,380,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+        events = []
+        if hasattr(transcript, 'words') and transcript.words:
+            words = transcript.words
+            chunk_size = 4
+            for i in range(0, len(words), chunk_size):
+                chunk = words[i:i + chunk_size]
+                if not chunk: continue
+                chunk_start = chunk[0].start + time_offset
+                chunk_end = chunk[-1].end + time_offset
+                text_parts = [w.word.strip().upper() for w in chunk]
+                text = " ".join(text_parts)
+                events.append({
+                    'start': self.format_time(chunk_start),
+                    'end': self.format_time(chunk_end),
+                    'text': text
+                })
+        elif hasattr(transcript, 'segments') and transcript.segments:
+            for segment in transcript.segments:
+                start = segment.get('start', 0) + time_offset
+                end = segment.get('end', 0) + time_offset
+                text = segment.get('text', '').strip().upper()
+                if text:
+                    events.append({
+                        'start': self.format_time(start),
+                        'end': self.format_time(end),
+                        'text': text
+                    })
+        for event in events:
+            ass_content += f"Dialogue: 0,{event['start']},{event['end']},Default,,0,0,0,,{event['text']}\n"
+        return ass_content
+
+    def _build_ass_hormozi(self, transcript, time_offset: float) -> str:
+        ass_content = """[Script Info]
+Title: Auto-generated captions
+ScriptType: v4.00+
+WrapStyle: 0
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial Black,72,&H00FFFF&,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,2,50,50,400,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+        events = []
+        if hasattr(transcript, 'words') and transcript.words:
+            words = transcript.words
+            chunk_size = 3
+            for i in range(0, len(words), chunk_size):
+                chunk = words[i:i + chunk_size]
+                if not chunk: continue
+                for j, current_word in enumerate(chunk):
+                    word_start = current_word.start + time_offset
+                    word_end = current_word.end + time_offset
+                    text_parts = []
+                    for k, w in enumerate(chunk):
+                        word_text = w.word.strip().upper()
+                        if k == j:
+                            text_parts.append(f"{{\\c&HFFFFFF&}}{word_text}{{\\c&H00FFFF&}}")
+                        else:
+                            text_parts.append(word_text)
+                    events.append({
+                        'start': self.format_time(word_start),
+                        'end': self.format_time(word_end),
+                        'text': " ".join(text_parts)
+                    })
+        elif hasattr(transcript, 'segments') and transcript.segments:
+            for segment in transcript.segments:
+                start = segment.get('start', 0) + time_offset
+                end = segment.get('end', 0) + time_offset
+                text = segment.get('text', '').strip().upper()
+                if text:
+                    events.append({
+                        'start': self.format_time(start),
+                        'end': self.format_time(end),
+                        'text': text
+                    })
+        for event in events:
+            ass_content += f"Dialogue: 0,{event['start']},{event['end']},Default,,0,0,0,,{event['text']}\n"
+        return ass_content
+
+    def _build_ass_split_color(self, transcript, time_offset: float) -> str:
+        ass_content = """[Script Info]
+Title: Auto-generated captions
+ScriptType: v4.00+
+WrapStyle: 0
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial Black,65,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,2,50,50,400,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+        events = []
+        if hasattr(transcript, 'words') and transcript.words:
+            words = transcript.words
+            chunk_size = 4
+            for i in range(0, len(words), chunk_size):
+                chunk = words[i:i + chunk_size]
+                if not chunk: continue
+                for j, current_word in enumerate(chunk):
+                    word_start = current_word.start + time_offset
+                    word_end = current_word.end + time_offset
+                    text_parts = []
+                    for k, w in enumerate(chunk):
+                        word_text = w.word.strip().upper()
+                        if k == j:
+                            text_parts.append(f"{{\\c&H0000FF&}}{word_text}{{\\c&HFFFFFF&}}")
+                        else:
+                            text_parts.append(word_text)
+                    events.append({
+                        'start': self.format_time(word_start),
+                        'end': self.format_time(word_end),
+                        'text': " ".join(text_parts)
+                    })
+        elif hasattr(transcript, 'segments') and transcript.segments:
+            for segment in transcript.segments:
+                start = segment.get('start', 0) + time_offset
+                end = segment.get('end', 0) + time_offset
+                text = segment.get('text', '').strip().upper()
+                if text:
+                    events.append({
+                        'start': self.format_time(start),
+                        'end': self.format_time(end),
+                        'text': text
+                    })
+        for event in events:
+            ass_content += f"Dialogue: 0,{event['start']},{event['end']},Default,,0,0,0,,{event['text']}\n"
+        return ass_content
     
     def format_time(self, seconds: float) -> str:
         """Convert seconds to ASS time format"""

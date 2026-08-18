@@ -133,7 +133,7 @@ window.Components.StockClipView = function () {
           distributeBtn.disabled = false;
           distributeBtn.style.opacity = '1';
           actionBar.style.display = 'flex';
-          actionBar.querySelector('#action-bar-text').textContent = \`\${selectedClipIds.size} clip dipilih\`;
+          actionBar.querySelector('#action-bar-text').textContent = `${selectedClipIds.size} clip dipilih`;
       } else {
           distributeBtn.disabled = true;
           distributeBtn.style.opacity = '0.5';
@@ -353,7 +353,7 @@ window.Components.StockClipView = function () {
           if (infoArea) {
               const badge = document.createElement('span');
               const style = badgeStyles[c.upload_status] || badgeStyles['belum_diupload'];
-              badge.style.cssText = \`background:\${style.bg};color:\${style.text};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:8px;text-transform:uppercase;\`;
+              badge.style.cssText = `background:${style.bg};color:${style.text};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:8px;text-transform:uppercase;`;
               badge.textContent = c.upload_status.replace('_', ' ');
               infoArea.appendChild(badge);
           }
