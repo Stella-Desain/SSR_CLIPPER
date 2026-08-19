@@ -2616,18 +2616,57 @@ Transcript:
         # Log raw response for debugging
         self.log(f"  Raw AI response (first 500 chars):\n{result[:500]}")
         
-        if result.startswith("```"):
+        # Strip markdown code fences if present
+        if "```" in result:
             result = re.sub(r"```json?\n?", "", result)
             result = re.sub(r"```\n?", "", result)
+        result = result.strip()
         
         try:
             highlights = json.loads(result)
-        except json.JSONDecodeError as e:
-            # Log full response on error
-            self.log(f"\n❌ JSON Parse Error: {e}")
-            self.log(f"\n📄 Full GPT Response:\n{result}")
-            self.log(f"\n💡 Error position: line {e.lineno}, column {e.colno}")
-            raise Exception(f"Failed to parse GPT response as JSON: {e}\n\nFull response logged above.")
+        except json.JSONDecodeError:
+            # AI sometimes appends extra text after the closing ']'
+            # Try extracting the outermost JSON array via bracket matching
+            start = result.find("[")
+            if start != -1:
+                depth = 0
+                end = -1
+                in_string = False
+                escape_next = False
+                for i, ch in enumerate(result[start:], start):
+                    if escape_next:
+                        escape_next = False
+                        continue
+                    if ch == "\\" and in_string:
+                        escape_next = True
+                        continue
+                    if ch == '"':
+                        in_string = not in_string
+                    elif not in_string:
+                        if ch == "[":
+                            depth += 1
+                        elif ch == "]":
+                            depth -= 1
+                            if depth == 0:
+                                end = i + 1
+                                break
+                if end != -1:
+                    extracted = result[start:end]
+                    try:
+                        highlights = json.loads(extracted)
+                        self.log(f"  ⚠ Extracted JSON array from response (had extra text after closing bracket)")
+                    except json.JSONDecodeError as e2:
+                        self.log(f"\n❌ JSON Parse Error (after extraction attempt): {e2}")
+                        self.log(f"\n📄 Full AI Response:\n{result}")
+                        raise Exception(f"Failed to parse AI response as JSON: {e2}\n\nFull response logged above.")
+                else:
+                    self.log(f"\n❌ No JSON array found in response")
+                    self.log(f"\n📄 Full AI Response:\n{result}")
+                    raise Exception("AI response contains no JSON array. Full response logged above.")
+            else:
+                self.log(f"\n❌ No JSON array found in response")
+                self.log(f"\n📄 Full AI Response:\n{result}")
+                raise Exception("AI response contains no JSON array. Full response logged above.")
         
         # Filter by duration (min 58s, max 120s)
         valid = []
