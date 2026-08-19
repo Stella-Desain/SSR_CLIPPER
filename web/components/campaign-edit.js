@@ -74,6 +74,11 @@ window.Components.CampaignEditView = function () {
   `;
   briefCard.appendChild(durasiGroup);
 
+  const maxClipsPerDayGroup = document.createElement('div');
+  maxClipsPerDayGroup.innerHTML = `<label class="field-label" style="display:block;margin-bottom:6px;">Maks Clip per Akun / Hari</label>
+    <input type="number" id="campaignMaxClipsPerDay" class="input" value="2" min="1">`;
+  briefCard.appendChild(maxClipsPerDayGroup);
+
   const hashtagsGroup = document.createElement('div');
   hashtagsGroup.innerHTML = `<label class="field-label" style="display:block;margin-bottom:6px;">Hashtags (Enter to add)</label>`;
   const hashtagsInputContainer = document.createElement('div');
@@ -312,6 +317,7 @@ window.Components.CampaignEditView = function () {
       
       durasiMinInput: durasiGroup.querySelector('#campaignDurasiMin'),
       durasiMaxInput: durasiGroup.querySelector('#campaignDurasiMax'),
+      maxClipsPerDayInput: maxClipsPerDayGroup.querySelector('#campaignMaxClipsPerDay'),
       hashtagsInput: hashtagsInputContainer,
       hashtagsRealInput,
       taggedAccountsInput,

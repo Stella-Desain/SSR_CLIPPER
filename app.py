@@ -1238,6 +1238,97 @@ class WebAPI:
             return {"status": "error", "message": str(e)}
 
 
+    def _build_caption(self, campaign_id):
+        """Compose caption string from campaign brief (CTA + tagged accounts + hashtags)."""
+        if not campaign_id or campaign_id == "default":
+            return ""
+        cfg = self._get_cfg()
+        camp = next((c for c in cfg.get("campaigns", []) if c.get("id") == campaign_id), None)
+        if not camp:
+            return ""
+        brief = camp.get("brief", {})
+        parts = []
+        if brief.get("cta"):
+            parts.append(brief["cta"].strip())
+        if brief.get("tagged_accounts"):
+            parts.append(" ".join(brief["tagged_accounts"]))
+        if brief.get("hashtags"):
+            parts.append(" ".join(brief["hashtags"]))
+        return "\n\n".join(p for p in parts if p)
+
+    def quick_upload(self, clip_ids):
+        """Upload/jadwalkan clip langsung tanpa modal — auto-resolve campaign per clip,
+        auto-split kalau clip yang dipilih berasal dari campaign berbeda-beda."""
+        if not clip_ids:
+            return {"status": "error", "message": "Tidak ada clip dipilih"}
+
+        from collections import defaultdict
+        all_clips = self.get_stock_clips()
+        selected = [c for c in all_clips if c["id"] in clip_ids]
+        if not selected:
+            return {"status": "error", "message": "Clip tidak ditemukan"}
+
+        groups = defaultdict(list)
+        for c in selected:
+            groups[c.get("campaign_id") or "default"].append(c["id"])
+
+        cfg = self._get_cfg()
+        campaigns_by_id = {c["id"]: c for c in cfg.get("campaigns", [])}
+
+        total_scheduled = 0
+        results = []
+        for camp_id, ids in groups.items():
+            max_per_day = 2
+            camp = campaigns_by_id.get(camp_id)
+            if camp:
+                max_per_day = camp.get("brief", {}).get("max_clips_per_day", 2)
+
+            preview = self.preview_distribution(ids, camp_id if camp_id != "default" else None, max_per_day)
+            if preview.get("status") != "ok":
+                results.append({"campaign_id": camp_id, "status": preview.get("status"), "message": preview.get("message")})
+                continue
+
+            confirm = self.confirm_distribution(preview["assignments"])
+            scheduled_count = len(preview["assignments"])
+            total_scheduled += scheduled_count
+            results.append({
+                "campaign_id": preview.get("campaign_id"),
+                "campaign_name": preview.get("campaign_name"),
+                "scheduled": scheduled_count
+            })
+
+        if total_scheduled == 0:
+            return {"status": "error", "message": "Tidak ada clip yang berhasil dijadwalkan", "results": results}
+
+        return {"status": "ok", "total_scheduled": total_scheduled, "results": results}
+
+    def update_clip_title(self, clip_path, new_title):
+        """Update judul clip (hook_text / title) dan simpan langsung ke data.json-nya."""
+        try:
+            new_title = (new_title or "").strip()
+            if not new_title:
+                return {"status": "error", "message": "Judul tidak boleh kosong"}
+
+            p = Path(clip_path)
+            data_json_path = p.parent / "data.json"
+            if not data_json_path.exists():
+                return {"status": "error", "message": "data.json tidak ditemukan"}
+
+            with open(data_json_path, 'r', encoding='utf-8') as f:
+                cdata = json.load(f)
+
+            if "hook_text" in cdata:
+                cdata["hook_text"] = new_title
+            else:
+                cdata["title"] = new_title
+
+            with open(data_json_path, 'w', encoding='utf-8') as f:
+                json.dump(cdata, f, indent=2, ensure_ascii=False)
+
+            return {"status": "ok", "title": new_title}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     def delete_video_folder(self, folder_id):
         """Delete an entire video folder (and every clip inside it)."""
         try:
@@ -1511,6 +1602,7 @@ class WebAPI:
                 if "scheduled_uploads" not in cdata:
                      cdata["scheduled_uploads"] = []
                      
+                caption = self._build_caption(asn.get("campaign_id"))
                 cdata["scheduled_uploads"].append({
                     "id": f"sched_{uuid.uuid4().hex[:8]}",
                     "campaign_id": asn.get("campaign_id", ""),
@@ -1519,7 +1611,8 @@ class WebAPI:
                     "scheduled_at": asn.get("scheduled_at"),
                     "status": "terjadwal",
                     "attempted_at": None,
-                    "error_message": None
+                    "error_message": None,
+                    "caption": caption
                 })
                 
                 with open(data_json_path, 'w', encoding='utf-8') as f:
@@ -1612,6 +1705,7 @@ def _upload_scheduler(api):
                                 # Proses upload blocking
                                 options = {
                                     "title": clip["title"],
+                                    "description": entry.get("caption", ""),
                                     "account_id": entry.get("account_id")
                                 }
                                 res = api.upload_clip(str(clip_path), entry.get("platform", "repliz"), options)

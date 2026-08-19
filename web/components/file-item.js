@@ -5,12 +5,12 @@
  * Three variants matching Figma symbols:
  *  - V1 (16:712): Title + Info, lime edit button — Dashboard Stock Clips & Jobs Proses
  *  - V2 (16:967): Title + Info, edit+trash icons top-right + file size bottom — Stock Clip page > Jobs panel
- *  - V3 (16:950): Title + Info, trash + Play + Upload buttons — Stock Clip page > Clips panel
+ *  - V3 (16:950): Title + Info, trash + Play buttons — Stock Clip page > Clips panel (Upload via header button)
  *
  * Usage:
  *   const el = FileItem.v1({ title, info, onEdit });
  *   const el = FileItem.v2({ title, info, size, onEdit, onDelete });
- *   const el = FileItem.v3({ title, info, onDelete, onPlay, onUpload });
+ *   const el = FileItem.v3({ title, info, onDelete, onPlay, onTitleChange });
  */
 
 window.FileItem = (function () {
@@ -132,9 +132,11 @@ window.FileItem = (function () {
 
   /**
    * V3 — Figma 3:3679 (Stock Clip > Clips)
-   * Full width, LIGHT bg, title+info, trash button, Play (outline), Upload (lime)
+   * Full width, LIGHT bg, title+info, trash button, Play (outline)
+   * Upload is handled by the panel header button, not per-row.
+   * Double-click on title to inline-edit.
    */
-  function v3({ title = 'Judul', info1 = 'Info', info2 = 'Info', onDelete, onPlay, onUpload } = {}) {
+  function v3({ title = 'Judul', info1 = 'Info', info2 = 'Info', onDelete, onPlay, onTitleChange } = {}) {
     const el = document.createElement('div');
     el.className = 'file-item file-item-v3';
     el.style.cssText = LIGHT_ITEM_STYLE;
@@ -148,7 +150,7 @@ window.FileItem = (function () {
           <span>${info1}</span><span style="margin:0 4px;">-</span><span>${info2}</span>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-left:12px;">
+      <div class="fi-actions" style="display:flex;align-items:center;gap:10px;margin-left:12px;">
         <button class="fi-btn-del" title="Delete" style="background:transparent;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;opacity:0.8;transition:opacity 150ms;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">
           ${ICON_TRASH}
         </button>
@@ -161,21 +163,45 @@ window.FileItem = (function () {
         " onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background='#FFFFFF'">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Play
         </button>
-        <button class="fi-btn-upload" style="
-          height:28px;padding:0 12px;
-          background:#8DC63F;border:none;border-radius:6px;
-          color:#FFFFFF;font-size:12px;font-weight:500;
-          cursor:pointer;display:flex;align-items:center;gap:4px;
-          transition:background 150ms ease;
-        " onmouseover="this.style.background='#7AB332'" onmouseout="this.style.background='#8DC63F'">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload
-        </button>
       </div>
     `;
 
+    // Inline title edit on double-click
+    const titleEl = el.querySelector('.fi-title');
+    titleEl.style.cursor = 'text';
+    titleEl.title = 'Double-click untuk edit judul';
+    titleEl.addEventListener('dblclick', () => {
+      const currentText = titleEl.textContent;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = currentText;
+      input.style.cssText = 'font-size:14px;font-weight:600;color:#111827;width:100%;border:1px solid #8DC63F;border-radius:4px;padding:2px 6px;outline:none;box-sizing:border-box;font-family:inherit;';
+      titleEl.replaceWith(input);
+      input.focus();
+      input.select();
+
+      let committed = false;
+      const commit = async () => {
+        if (committed) return;
+        committed = true;
+        const newVal = input.value.trim();
+        if (!newVal || newVal === currentText) {
+          input.replaceWith(titleEl);
+          return;
+        }
+        titleEl.textContent = newVal;
+        input.replaceWith(titleEl);
+        if (onTitleChange) await onTitleChange(newVal, currentText);
+      };
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') input.blur();
+        if (e.key === 'Escape') { input.value = currentText; committed = true; input.replaceWith(titleEl); }
+      });
+    });
+
     if (onDelete) el.querySelector('.fi-btn-del').addEventListener('click', onDelete);
     if (onPlay) el.querySelector('.fi-btn-play').addEventListener('click', onPlay);
-    if (onUpload) el.querySelector('.fi-btn-upload').addEventListener('click', onUpload);
 
     return el;
   }

@@ -185,6 +185,7 @@ function applyExtractedBrief(res) {
   const b = d.brief || {};
   f.durasiMinInput.value = b.durasi_min || 15;
   f.durasiMaxInput.value = b.durasi_max || 180;
+  f.maxClipsPerDayInput.value = b.max_clips_per_day || 2;
   setChips(f.hashtagsInput, b.hashtags || []);
   f.taggedAccountsInput.value = (b.tagged_accounts || []).join(', ');
   setHooksList(f.hooksList, b.hooks || []);
@@ -402,6 +403,7 @@ async function openCampaignEdit(id = null) {
       const b = c.brief || {};
       f.durasiMinInput.value = b.durasi_min || 15;
       f.durasiMaxInput.value = b.durasi_max || 180;
+      f.maxClipsPerDayInput.value = b.max_clips_per_day || 2;
       setChips(f.hashtagsInput, b.hashtags || []);
       f.taggedAccountsInput.value = (b.tagged_accounts || []).join(', ');
       setHooksList(f.hooksList, b.hooks || []);
@@ -463,7 +465,8 @@ async function saveCampaign() {
       angles: getChipValues(f.anglesInput),
       persona: f.personaArea.value.trim(),
       tujuan: f.tujuanInput.value.trim(),
-      cta: f.ctaInput.value.trim()
+      cta: f.ctaInput.value.trim(),
+      max_clips_per_day: parseInt(f.maxClipsPerDayInput.value) || 2
     },
     do_rules: getRuleListValues(f.doRulesList),
     dont_rules: getRuleListValues(f.dontRulesList),

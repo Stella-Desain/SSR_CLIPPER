@@ -102,7 +102,7 @@ window.Components.StockClipView = function () {
   `;
   clipsPanel.appendChild(clipsSub);
 
-  // Clips list container wrapper (to hold list + action bar)
+  // Clips list container wrapper
   const clipsBodyWrapper = document.createElement('div');
   clipsBodyWrapper.style.cssText = 'flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden;';
   clipsPanel.appendChild(clipsBodyWrapper);
@@ -111,44 +111,58 @@ window.Components.StockClipView = function () {
   const clipsBody = document.createElement('div');
   clipsBody.style.cssText = 'flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px;';
   clipsBodyWrapper.appendChild(clipsBody);
-  
-  // Action bar
-  const actionBar = document.createElement('div');
-  actionBar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;background:#FFFFFF;border-top:1px solid #E5E7EB;padding:12px 24px;display:none;justify-content:space-between;align-items:center;box-shadow:0 -4px 10px rgba(0,0,0,0.05);z-index:10;';
-  actionBar.innerHTML = `
-    <span id="action-bar-text" style="font-size:14px;font-weight:500;color:#374151;">0 clip dipilih</span>
-    <button id="action-bar-btn" class="btn btn-lime">Distribusikan & upload</button>
-  `;
-  clipsBodyWrapper.appendChild(actionBar);
+  // (action bar footer removed — upload is handled by the single header button)
+
 
   layout.appendChild(jobsPanel);
   layout.appendChild(clipsPanel);
   section.appendChild(layout);
   
   let selectedClipIds = new Set();
+  let currentVisibleClips = [];
   
-  function updateActionBar() {
-      const distributeBtn = section.querySelector('#distribute-btn');
+  function updateDistributeButton() {
+      const btn = section.querySelector('#distribute-btn');
       if (selectedClipIds.size > 0) {
-          distributeBtn.disabled = false;
-          distributeBtn.style.opacity = '1';
-          actionBar.style.display = 'flex';
-          actionBar.querySelector('#action-bar-text').textContent = `${selectedClipIds.size} clip dipilih`;
+          btn.textContent = `Upload (${selectedClipIds.size})`;
+          btn.disabled = false;
+          btn.style.opacity = '1';
       } else {
-          distributeBtn.disabled = true;
-          distributeBtn.style.opacity = '0.5';
-          actionBar.style.display = 'none';
+          const eligible = currentVisibleClips.filter(c => c.upload_status === 'belum_diupload');
+          btn.textContent = 'Upload Semua';
+          btn.disabled = eligible.length === 0;
+          btn.style.opacity = eligible.length === 0 ? '0.5' : '1';
       }
   }
   
-  section.querySelector('#distribute-btn').onclick = () => {
-      window.Components.DistributionPanel(selectedClipIds, () => {
-          selectedClipIds.clear();
-          refresh();
-      });
+  section.querySelector('#distribute-btn').onclick = async () => {
+      const distributeBtn = section.querySelector('#distribute-btn');
+      const idsToUpload = selectedClipIds.size > 0
+          ? Array.from(selectedClipIds)
+          : currentVisibleClips.filter(c => c.upload_status === 'belum_diupload').map(c => c.id);
+
+      if (idsToUpload.length === 0) return;
+
+      const originalText = distributeBtn.textContent;
+      distributeBtn.disabled = true;
+      distributeBtn.textContent = 'Mengupload...';
+
+      try {
+          const res = await window.pywebview.api.quick_upload(idsToUpload);
+          if (res && res.status === 'ok') {
+              selectedClipIds.clear();
+              await refresh();
+          } else {
+              alert('Gagal upload: ' + (res?.message || 'Unknown error'));
+              distributeBtn.disabled = false;
+              distributeBtn.textContent = originalText;
+          }
+      } catch (e) {
+          alert('Terjadi error saat upload');
+          distributeBtn.disabled = false;
+          distributeBtn.textContent = originalText;
+      }
   };
-  
-  actionBar.querySelector('#action-bar-btn').onclick = section.querySelector('#distribute-btn').onclick;
 
   let currentCampaignFilter = null; // Used for deep linking from Campaign page
 
@@ -252,19 +266,15 @@ window.Components.StockClipView = function () {
           if (subTitleEl) subTitleEl.textContent = selectedFolderId && foldersById[selectedFolderId] ? foldersById[selectedFolderId].title : 'All Video';
       }
 
+      // client-side filtering done — track visible clips
+      currentVisibleClips = clips;
+
       if (autoSelectUnuploaded) {
-          selectedClipIds.clear();
-          clips.forEach(c => {
-              if (c.upload_status === 'belum_diupload') {
-                  selectedClipIds.add(c.id);
-              }
-          });
-          updateActionBar();
-          if (selectedClipIds.size > 0) {
-              window.Components.DistributionPanel(selectedClipIds, () => {
-                  selectedClipIds.clear();
-                  refresh();
-              });
+          const idsToUpload = clips.filter(c => c.upload_status === 'belum_diupload').map(c => c.id);
+          if (idsToUpload.length > 0) {
+              await window.pywebview.api.quick_upload(idsToUpload);
+              await refresh();
+              return;
           }
       }
 
@@ -304,26 +314,13 @@ window.Components.StockClipView = function () {
             onPlay: async () => {
               await window.pywebview.api.play_clip(c.path);
             },
-            onUpload: async () => {
-              const platform = prompt('Masukkan platform (tiktok / youtube / repliz):', 'repliz');
-              if (!platform) return;
-              
-              let accountId = null;
-              if (platform === 'repliz') {
-                  accountId = prompt('Masukkan Repliz Account ID (kosongkan jika tidak tahu):', '');
-              }
-
-              if (confirm(`Upload this clip to ${platform}?`)) {
-                  try {
-                      const res = await window.pywebview.api.upload_clip(c.path, platform, {title: c.title, account_id: accountId});
-                      if (res && res.status === 'success') {
-                          alert('Upload successful!');
-                      } else {
-                          alert('Upload failed: ' + (res?.message || 'Unknown error'));
-                      }
-                  } catch (e) {
-                      alert('Upload error');
-                  }
+            onTitleChange: async (newTitle) => {
+              const res = await window.pywebview.api.update_clip_title(c.path, newTitle);
+              if (!res || res.status !== 'ok') {
+                  alert('Gagal menyimpan judul: ' + (res?.message || 'Unknown error'));
+                  refresh();
+              } else {
+                  c.title = newTitle;
               }
             }
           });
@@ -343,7 +340,7 @@ window.Components.StockClipView = function () {
               } else {
                   selectedClipIds.delete(c.id);
               }
-              updateActionBar();
+              updateDistributeButton();
           });
           
           rowWrapper.appendChild(checkbox);
@@ -379,7 +376,7 @@ window.Components.StockClipView = function () {
         });
       }
       
-      updateActionBar();
+      updateDistributeButton();
 
     } catch(e) {
       console.error("Failed to load stock clips", e);
