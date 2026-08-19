@@ -186,9 +186,19 @@ class ConfigManager:
         self.save_config(self.config)
     
     def save_config(self, config):
-        """Save configuration dict to file"""
-        with open(self.config_file, "w") as f:
-            json.dump(config, f, indent=2)
+        """Save configuration dict to file (atomic write to prevent corruption)"""
+        import tempfile, os
+        tmp_path = self.config_file.with_suffix(".tmp")
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self.config_file)  # atomic on same filesystem
+        except Exception:
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+            raise
     
     def get(self, key, default=None):
         """Get configuration value"""
