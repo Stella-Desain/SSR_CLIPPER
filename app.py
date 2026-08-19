@@ -251,16 +251,19 @@ class WebAPI:
             "clips": num_clips,
             "campaign_id": campaign_id
         }
+        
+        cfg = self._get_cfg()
+        max_highlights = int(cfg.get("max_highlights", 30))
             
         self.thread = threading.Thread(
             target=self._run,
-            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang, bool(portrait), bool(highlight_finder), bool(yt_title_maker), campaign_id, subtitle_style),
+            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang, bool(portrait), bool(highlight_finder), bool(yt_title_maker), campaign_id, subtitle_style, max_highlights),
             daemon=True,
         )
         self.thread.start()
         return {"status": "started"}
 
-    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang, portrait, highlight_finder, yt_title_maker, campaign_id=None, subtitle_style="capcut"):
+    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang, portrait, highlight_finder, yt_title_maker, campaign_id=None, subtitle_style="capcut", max_highlights=30):
         def log_cb(msg):
             self.status = str(msg)
             if self.current_job:
@@ -341,7 +344,7 @@ class WebAPI:
         try:
             self.status = "running"
             self.progress = 0.0
-            core.process(url, num_clips=num_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait, highlight_finder=highlight_finder, yt_title_maker=yt_title_maker, campaign_id=campaign_id)
+            core.process(url, num_clips=num_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait, highlight_finder=highlight_finder, yt_title_maker=yt_title_maker, campaign_id=campaign_id, max_highlights=max_highlights)
             self.status = "complete"
             self.progress = 1.0
             if self.current_job:

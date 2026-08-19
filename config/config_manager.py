@@ -93,6 +93,7 @@ class ConfigManager:
             "model": "gpt-4.1",  # Kept for backward compatibility
             "tts_model": "tts-1",  # Kept for backward compatibility
             "temperature": 1.0,
+            "max_highlights": 30,
             "output_dir": str(self.output_dir),
             "system_prompt": AutoClipperCore.get_default_prompt(),
             "installation_id": str(uuid.uuid4()),

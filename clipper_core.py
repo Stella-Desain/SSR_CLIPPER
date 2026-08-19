@@ -7,6 +7,7 @@ import subprocess
 import os
 import re
 import threading
+import concurrent.futures
 import json
 import cv2
 import numpy as np
@@ -428,13 +429,12 @@ Kesalahan durasi atau format = GAGAL TOTAL.
 TUGAS UTAMA (NON-NEGOTIABLE)
 ============================
 
-Dari transcript di bawah, HASILKAN TEPAT {num_clips} segment.
+Dari transcript di bawah, temukan SEBANYAK MUNGKIN segment yang memenuhi kriteria kualitas di bawah.
 
-* TIDAK BOLEH kurang.
-* TIDAK BOLEH lebih.
-* ARRAY KOSONG DILARANG DALAM KONDISI APAPUN.
-
-Jika kesulitan menemukan segmen bagus, WAJIB tetap menghasilkan {num_clips} dengan strategi penggabungan/perpanjangan.
+* TIDAK ada batas jumlah — semakin banyak segment valid, semakin baik.
+* ARRAY KOSONG DILARANG DALAM KONDISI APAPUN. Minimal 1 segment.
+* OVERLAP DIPERBOLEHKAN — jika satu rentang waktu bisa dijadikan lebih dari satu clip dengan hook/framing/angle berbeda, KEDUA entry boleh masuk sebagai segment terpisah.
+* Prioritaskan KUANTITAS segment berkualitas. Jangan berhenti di 5-8 segment jika masih ada momen viral lain.
 
 ==================================================
 PRINSIP PEMILIHAN CLIP (WAJIB DIPRIORITASKAN)
@@ -574,7 +574,7 @@ SELF-VALIDATION (WAJIB SEBELUM RETURN)
 
 Periksa:
 
-1. Jumlah segment = {num_clips} ?
+1. Setiap segment memenuhi kriteria kualitas di atas ?
 2. Semua durasi 60–120 detik ?
 3. Semua punya tepat 6 field ?
 4. virality_score berupa integer 1–10 ?
@@ -605,7 +605,7 @@ KONTEN
 Transcript:
 {transcript}"""
     
-    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True, campaign_id: str = None):
+    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True, campaign_id: str = None, max_highlights: int = 30):
         """Main processing pipeline"""
         
         # TODO: logic highlight_finder/yt_title_maker belum diimplementasi di core
@@ -620,17 +620,18 @@ Transcript:
         if self.is_cancelled():
             return
         
-        if not srt_path:
-            raise SubtitleNotFoundError(
-                f"No subtitle available for language: {self.subtitle_language.upper()}",
-                video_path=video_path,
-                video_info=video_info
-            )
+        # Step 2: Get transcript (YouTube subtitle if available, else transcribe)
+        if srt_path:
+            self.set_progress("Parsing subtitles...", 0.15)
+            self.log("📄 Using YouTube subtitle")
+            transcript = self.parse_srt(srt_path)
+        else:
+            self.set_progress("Transcribing video (no subtitle found)...", 0.15)
+            self.log("🎤 No subtitle found — transcribing with Whisper...")
+            transcript = self.transcribe_full_video(video_path)
         
-        # Step 2: Find highlights
         self.set_progress("Finding highlights...", 0.3)
-        transcript = self.parse_srt(srt_path)
-        highlights = self.find_highlights(transcript, video_info, num_clips)
+        highlights = self.find_highlights(transcript, video_info, max_highlights)
         
         if self.is_cancelled():
             return
@@ -653,15 +654,53 @@ Transcript:
         original_output_dir = self.output_dir
         self.output_dir = video_folder
         
-        # Step 4: Process each clip
+        # Step 4: Assign conflict groups before dispatching to workers
+        self._assign_conflict_groups(highlights)
+        
+        # Pre-init MediaPipe in main thread if needed (thread safety)
+        if portrait and self.face_tracking_mode == "mediapipe":
+            self._init_mediapipe()
+        
+        # Step 5: Process clips in parallel (4-7 workers)
         total_clips = len(highlights)
+        worker_count = max(4, min(7, os.cpu_count() or 4))
+        self.log(f"\n🚀 Processing {total_clips} clips with {worker_count} parallel workers")
+        
+        completed_count = [0]  # mutable container for thread-safe access
+        completed_lock = threading.Lock()
+        clip_errors = []
+        
+        def _worker(index, highlight):
+            try:
+                self.process_clip(
+                    video_path, highlight, index, total_clips,
+                    add_captions=add_captions, add_hook=add_hook,
+                    portrait=portrait, campaign_id=campaign_id,
+                    completed_counter=(completed_count, completed_lock, total_clips),
+                )
+            except Exception as e:
+                clip_errors.append((index, highlight.get("title", "?"), str(e)))
+                self.log(f"  ❌ Clip {index} failed: {e}")
+            finally:
+                with completed_lock:
+                    completed_count[0] += 1
+        
         try:
-            for i, highlight in enumerate(highlights, 1):
-                if self.is_cancelled():
-                    return
-                self.process_clip(video_path, highlight, i, total_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+                futures = []
+                for i, highlight in enumerate(highlights, 1):
+                    if self.is_cancelled():
+                        break
+                    futures.append(executor.submit(_worker, i, highlight))
+                # Wait for all submitted futures
+                concurrent.futures.wait(futures)
         finally:
             self.output_dir = original_output_dir
+        
+        if clip_errors:
+            self.log(f"\n⚠️ {len(clip_errors)} clip(s) failed:")
+            for idx, title, err in clip_errors:
+                self.log(f"  Clip {idx} ({title}): {err}")
         
         # Step 5: Simpan metadata video (dipakai Jobs panel buat nampilin folder ini)
         video_meta = {
@@ -2449,11 +2488,55 @@ Transcript:
         return f"{h:02d}:{m:02d}:{int(s):02d},{ms:03d}"
     
     
-    def find_highlights(self, transcript: str, video_info: dict, num_clips: int) -> list:
+    def _assign_conflict_groups(self, highlights: list):
+        """Assign conflict_group_id to overlapping highlights.
+        
+        Two highlights overlap if they share any second in their
+        [start_time_seconds, end_time_seconds] range. O(n²) is fine
+        since n <= max_highlights (~30).
+        """
+        n = len(highlights)
+        if n == 0:
+            return
+        
+        # Union-Find for grouping
+        parent = list(range(n))
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a, b):
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[ra] = rb
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                s1 = highlights[i].get("start_time_seconds", self.parse_timestamp(highlights[i]["start_time"]))
+                e1 = highlights[i].get("end_time_seconds", self.parse_timestamp(highlights[i]["end_time"]))
+                s2 = highlights[j].get("start_time_seconds", self.parse_timestamp(highlights[j]["start_time"]))
+                e2 = highlights[j].get("end_time_seconds", self.parse_timestamp(highlights[j]["end_time"]))
+                if s1 < e2 and s2 < e1:  # overlap
+                    union(i, j)
+
+        # Map roots to group IDs
+        group_map = {}
+        counter = 0
+        for i in range(n):
+            root = find(i)
+            if root not in group_map:
+                counter += 1
+                group_map[root] = f"cg-{counter}"
+            highlights[i]["conflict_group_id"] = group_map[root]
+        
+        self.log(f"  📊 Assigned {counter} conflict groups to {n} highlights")
+    
+    def find_highlights(self, transcript: str, video_info: dict, max_highlights: int = 30) -> list:
         """Find highlights using AI (OpenAI-compatible API)"""
         self.log(f"[2/4] Finding highlights (using {self.model})...")
-        
-        request_clips = num_clips + 3
         
         video_context = ""
         if video_info:
@@ -2463,15 +2546,13 @@ Transcript:
 - Deskripsi: {video_info.get('description', '')[:500]}"""
         
         # Replace placeholders safely (avoid .format() which breaks on user's curly braces)
-        prompt = self.system_prompt.replace("{num_clips}", str(request_clips))
+        prompt = self.system_prompt.replace("{num_clips}", "30")  # backward compat for old user prompts
         prompt = prompt.replace("{video_context}", video_context)
         prompt = prompt.replace("{transcript}", transcript)
         
         # Warn if required placeholders are missing
         if "{transcript}" in self.system_prompt and "{transcript}" in prompt:
             self.log("  ⚠ Warning: {transcript} placeholder not replaced - check your system prompt")
-        if "{num_clips}" in self.system_prompt and "{num_clips}" in prompt:
-            self.log("  ⚠ Warning: {num_clips} placeholder not replaced - check your system prompt")
 
         # Use OpenAI-compatible API for all providers
         self.log(f"  Using API: {self.highlight_client.base_url}")
@@ -2578,18 +2659,16 @@ Transcript:
             elif duration < 58:
                 self.log(f"  ✗ {h['title']} ({duration:.0f}s) - Too short, skipped")
             
-            if len(valid) >= num_clips:
-                break
+        # Sort by virality score (highest first) and apply safety cap
+        valid.sort(key=lambda h: h.get("virality_score", 5), reverse=True)
+        if len(valid) > max_highlights:
+            self.log(f"  ℹ️ {len(valid)} valid highlights found, capping to top {max_highlights} by virality score")
+            valid = valid[:max_highlights]
         
-        # If we don't have enough valid clips, warn user
-        if len(valid) < num_clips:
-            self.log(f"\n⚠️ WARNING: Only found {len(valid)} valid clips out of {num_clips} requested!")
-            self.log(f"   AI returned many segments that were too short (< 58s).")
-            self.log(f"   Consider using a better AI model or adjusting the prompt.")
-        
-        return valid[:num_clips]
+        self.log(f"\n✅ {len(valid)} highlights found, sorted by virality score")
+        return valid
     
-    def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False, portrait: bool = True):
+    def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False, portrait: bool = True, campaign_id: str = None, completed_counter: tuple = None):
         """Process a single clip: cut, portrait, hook (optional), captions (optional)
         
         Args:
@@ -2628,11 +2707,18 @@ Transcript:
         
         # Helper to report sub-progress with percentage
         def clip_progress(step_name: str, step_num: int, sub_progress: float = 0):
-            # Calculate overall progress: base (30%) + clip progress (60%)
-            clip_base = 0.3 + (0.6 * (index - 1) / total_clips)
-            clip_portion = 0.6 / total_clips
-            step_progress = clip_portion * ((step_num + sub_progress) / total_steps)
-            overall = clip_base + step_progress
+            # Thread-safe progress: base from completed count, not index
+            if completed_counter:
+                _count_list, _lock, _total = completed_counter
+                with _lock:
+                    done = _count_list[0]
+                overall = 0.3 + 0.6 * done / _total
+            else:
+                # Fallback for sequential calls (e.g. pre_cut mode)
+                clip_base = 0.3 + (0.6 * (index - 1) / total_clips)
+                clip_portion = 0.6 / total_clips
+                step_progress = clip_portion * ((step_num + sub_progress) / total_steps)
+                overall = clip_base + step_progress
             
             # Format with percentage
             percent = int(sub_progress * 100)
@@ -2883,6 +2969,10 @@ Transcript:
             "has_watermark": self.watermark_settings.get("enabled", False),
             "has_credit": self.credit_watermark_settings.get("enabled", False),
             "channel_name": self.channel_name,
+            "campaign_id": campaign_id,
+            "virality_score": highlight.get("virality_score"),
+            "description": highlight.get("description"),
+            "conflict_group_id": highlight.get("conflict_group_id"),
         }
         
         with open(clip_dir / "data.json", "w", encoding="utf-8") as f:
