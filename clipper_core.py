@@ -2088,7 +2088,7 @@ Transcript:
         self.log(f"  Audio file size: {file_size_mb:.1f} MB")
         
         # Get total audio duration
-        probe_cmd = [self.ffmpeg_path, "-i", audio_file, "-f", "null", "-"]
+        probe_cmd = [self.ffmpeg_path, "-i", audio_file]
         probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
         duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", probe_result.stderr)
         total_duration = 0
@@ -2130,10 +2130,7 @@ Transcript:
                     "-ss", str(chunk_start),  # input seek: before -i for fast seeking
                     "-t", str(chunk_duration),
                     "-i", audio_file,
-                    "-acodec", "libmp3lame",
-                    "-ar", "16000",
-                    "-ac", "1",
-                    "-b:a", "64k",
+                    "-c:a", "copy",  # audio sudah 16kHz mono 64kbps, tinggal potong tanpa re-encode
                     chunk_file
                 ]
                 subprocess.run(cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
@@ -2885,7 +2882,6 @@ Transcript:
             else:
                 status = f"Clip {index}/{total_clips}: {step_name}"
             
-            print(f"[DEBUG] clip_progress: {status} (overall: {overall*100:.1f}%)")
             self.set_progress(status, overall)
             self._update_clip_state(index, step=step_name, step_progress=(step_num + sub_progress) / total_steps)
         
@@ -3022,75 +3018,10 @@ Transcript:
         else:
             self.log("  ⊘ Skipped captions (disabled)")
         
-        # Step 5: Add watermark (if enabled)
-        if self.watermark_settings.get("enabled"):
-            if self.is_cancelled():
-                return
-            
-            # Check if we need to add watermark step to progress
-            if not add_captions:
-                # Watermark is a new step
-                total_steps += 1
-            
-            clip_progress("Adding watermark...", current_step, 0)
-            
-            # Apply watermark to current output
-            self.add_watermark_with_progress(str(current_output), str(final_file),
-                lambda p: clip_progress("Adding watermark...", current_step, p))
-            
-            if not final_file.exists():
-                raise Exception(f"Failed to create final video with watermark: {final_file}")
-            
-            self.log("  ✓ Added watermark")
-            current_output = final_file
-            current_step += 1
-            
-            # Cleanup temp captioned file if exists
-            if add_captions:
-                try:
-                    temp_captioned = clip_dir / "temp_captioned.mp4"
-                    if temp_captioned.exists():
-                        temp_captioned.unlink()
-                except Exception as e:
-                    self.log(f"  Warning: Could not delete temp_captioned.mp4: {e}")
-        elif not add_captions:
-            # No captions and no watermark, just copy current output to final
-            import shutil
-            shutil.copy(str(current_output), str(final_file))
-            current_output = final_file
-        
-        # Step 6: Add credit watermark (if enabled)
-        if self.credit_watermark_settings.get("enabled") and self.channel_name:
-            if self.is_cancelled():
-                return
-            
-            total_steps += 1
-            clip_progress("Adding credit...", current_step, 0)
-            
-            # If current_output is already final_file, we need a temp file
-            if str(current_output) == str(final_file):
-                temp_credit_input = clip_dir / "temp_before_credit.mp4"
-                import shutil
-                shutil.copy(str(final_file), str(temp_credit_input))
-                current_output = temp_credit_input
-            
-            self.add_credit_watermark_with_progress(str(current_output), str(final_file),
-                lambda p: clip_progress("Adding credit...", current_step, p))
-            
-            if not final_file.exists():
-                raise Exception(f"Failed to create final video with credit: {final_file}")
-            
-            self.log(f"  ✓ Added credit: Source: {self.channel_name}")
-            current_step += 1
-            
-            # Cleanup temp file
-            try:
-                temp_credit_input = clip_dir / "temp_before_credit.mp4"
-                if temp_credit_input.exists():
-                    temp_credit_input.unlink()
-            except Exception as e:
-                self.log(f"  Warning: Could not delete temp_before_credit.mp4: {e}")
-        
+        # Get total audio duration
+        probe_cmd = [self.ffmpeg_path, "-i", audio_file]
+        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
+        duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", probe_result.stderr)
         # Mark complete
         clip_progress("Done", total_steps, 0)
         
@@ -3137,88 +3068,6 @@ Transcript:
         with open(clip_dir / "data.json", "w", encoding="utf-8") as f:
             json.dump(metadata, f, ensure_ascii=False, indent=2)
     
-    
-    def convert_to_portrait_opencv(self, input_path: str, output_path: str):
-        """Convert landscape to 9:16 portrait with speaker tracking (OpenCV Haar Cascade)"""
-        
-        cap = cv2.VideoCapture(input_path)
-        orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-        # Calculate crop dimensions
-        target_ratio = 9 / 16
-        crop_w = int(orig_h * target_ratio)
-        crop_h = orig_h
-        out_w, out_h = 1080, 1920
-        
-        # Face detector
-        face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        )
-        
-        # First pass: analyze frames
-        crop_positions = []
-        current_target = orig_w / 2
-        
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(50, 50))
-            
-            if len(faces) > 0:
-                # Find largest face
-                largest = max(faces, key=lambda f: f[2] * f[3])
-                current_target = largest[0] + largest[2] / 2
-            
-            crop_x = int(current_target - crop_w / 2)
-            crop_x = max(0, min(crop_x, orig_w - crop_w))
-            crop_positions.append(crop_x)
-        
-        # Stabilize positions
-        crop_positions = self.stabilize_positions(crop_positions)
-        
-        # Second pass: create video
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        temp_video = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
-        
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(temp_video, fourcc, fps, (out_w, out_h))
-        
-        frame_idx = 0
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            crop_x = crop_positions[frame_idx] if frame_idx < len(crop_positions) else crop_positions[-1]
-            cropped = frame[0:crop_h, crop_x:crop_x+crop_w]
-            resized = cv2.resize(cropped, (out_w, out_h), interpolation=cv2.INTER_LANCZOS4)
-            out.write(resized)
-            frame_idx += 1
-        
-        cap.release()
-        out.release()
-        
-        # Merge with audio using GPU/CPU encoder
-        encoder_args = self.get_video_encoder_args()
-        cmd = [
-            self.ffmpeg_path, "-y",
-            "-i", temp_video,
-            "-i", input_path,
-            *encoder_args,
-            "-c:a", "aac", "-b:a", "192k",
-            "-map", "0:v:0", "-map", "1:a:0",
-            "-shortest",
-            output_path
-        ]
-        self.log_ffmpeg_command(cmd, "Portrait Merge Audio (OpenCV)")
-        self._run_ffmpeg_subprocess(cmd)
-        os.unlink(temp_video)
     
     def stabilize_positions(self, positions: list) -> list:
         """Stabilize crop positions - reduce jitter and sudden movements"""
@@ -3278,193 +3127,6 @@ Transcript:
                 self.log("  MediaPipe initialized successfully")
             except ImportError:
                 raise Exception("MediaPipe not installed. Run: pip install mediapipe")
-    
-    def convert_to_portrait_mediapipe(self, input_path: str, output_path: str):
-        """Convert landscape to 9:16 portrait with active speaker detection (MediaPipe)"""
-        
-        # Initialize MediaPipe
-        self._init_mediapipe()
-        
-        cap = cv2.VideoCapture(input_path)
-        if not cap.isOpened():
-            raise Exception(f"Failed to open video: {input_path}")
-        
-        orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-        if total_frames == 0 or fps == 0:
-            cap.release()
-            raise Exception(f"Invalid video properties: {total_frames} frames, {fps} fps")
-        
-        # Calculate crop dimensions
-        target_ratio = 9 / 16
-        crop_w = int(orig_h * target_ratio)
-        crop_h = orig_h
-        out_w, out_h = 1080, 1920
-        
-        # MediaPipe Face Mesh settings
-        lip_threshold = self.mediapipe_settings.get("lip_activity_threshold", 0.15)
-        switch_threshold = self.mediapipe_settings.get("switch_threshold", 0.3)
-        min_shot_duration = self.mediapipe_settings.get("min_shot_duration", 90)
-        center_weight = self.mediapipe_settings.get("center_weight", 0.3)
-        
-        # First pass: analyze frames with MediaPipe
-        self.log("  Pass 1: Analyzing lip movements...")
-        crop_positions = []
-        face_activities = []  # Store activity scores per frame
-        
-        with self.mp_face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=3,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        ) as face_mesh:
-            
-            frame_count = 0
-            prev_lip_distances = {}  # Track previous lip distances per face
-            
-            while True:
-                if self.is_cancelled():
-                    cap.release()
-                    raise Exception("Cancelled by user")
-                
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                
-                # Convert to RGB for MediaPipe
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                results = face_mesh.process(rgb_frame)
-                
-                best_face_x = orig_w / 2  # Default to center
-                max_activity = 0
-                
-                if results.multi_face_landmarks:
-                    faces_data = []
-                    
-                    for face_id, face_landmarks in enumerate(results.multi_face_landmarks):
-                        # Calculate lip activity
-                        activity = self._calculate_lip_activity(
-                            face_landmarks, 
-                            orig_w, 
-                            orig_h,
-                            prev_lip_distances.get(face_id, None)
-                        )
-                        
-                        # Get face center position
-                        face_x = face_landmarks.landmark[1].x * orig_w  # Nose tip
-                        
-                        # Calculate combined score (activity + center position)
-                        center_score = 1.0 - abs(face_x - orig_w / 2) / (orig_w / 2)
-                        combined_score = (activity * (1 - center_weight)) + (center_score * center_weight)
-                        
-                        faces_data.append({
-                            'x': face_x,
-                            'activity': activity,
-                            'combined_score': combined_score
-                        })
-                        
-                        # Update previous lip distance
-                        upper_lip = face_landmarks.landmark[13]  # Upper lip center
-                        lower_lip = face_landmarks.landmark[14]  # Lower lip center
-                        lip_distance = abs(upper_lip.y - lower_lip.y)
-                        prev_lip_distances[face_id] = lip_distance
-                    
-                    # Select face with highest combined score
-                    if faces_data:
-                        best_face = max(faces_data, key=lambda f: f['combined_score'])
-                        best_face_x = best_face['x']
-                        max_activity = best_face['activity']
-                
-                # Calculate crop position
-                crop_x = int(best_face_x - crop_w / 2)
-                crop_x = max(0, min(crop_x, orig_w - crop_w))
-                crop_positions.append(crop_x)
-                face_activities.append(max_activity)
-                
-                frame_count += 1
-                
-                if frame_count % 30 == 0:
-                    self.log(f"    Analyzed {frame_count}/{total_frames} frames...")
-        
-        self.log(f"  Analyzed {frame_count} frames with MediaPipe")
-        
-        # Stabilize positions with shot-based switching
-        crop_positions = self._stabilize_positions_with_activity(
-            crop_positions, 
-            face_activities,
-            min_shot_duration,
-            switch_threshold
-        )
-        
-        # Second pass: create video
-        self.log("  Pass 2: Creating portrait video...")
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        temp_video = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
-        
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(temp_video, fourcc, fps, (out_w, out_h))
-        
-        if not out.isOpened():
-            cap.release()
-            raise Exception(f"Failed to create VideoWriter: {temp_video}")
-        
-        frame_idx = 0
-        while True:
-            if self.is_cancelled():
-                cap.release()
-                out.release()
-                try:
-                    os.unlink(temp_video)
-                except:
-                    pass
-                raise Exception("Cancelled by user")
-            
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            crop_x = crop_positions[frame_idx] if frame_idx < len(crop_positions) else crop_positions[-1]
-            cropped = frame[0:crop_h, crop_x:crop_x+crop_w]
-            resized = cv2.resize(cropped, (out_w, out_h), interpolation=cv2.INTER_LANCZOS4)
-            out.write(resized)
-            
-            frame_idx += 1
-            
-            if frame_idx % 30 == 0:
-                self.log(f"    Created {frame_idx}/{total_frames} frames...")
-        
-        cap.release()
-        out.release()
-        
-        # Verify temp video was created
-        if not os.path.exists(temp_video) or os.path.getsize(temp_video) < 1000:
-            raise Exception(f"Failed to create temp video: {temp_video}")
-        
-        # Merge with audio using GPU/CPU encoder
-        self.log("  Pass 3: Merging audio...")
-        encoder_args = self.get_video_encoder_args()
-        cmd = [
-            self.ffmpeg_path, "-y",
-            "-i", temp_video,
-            "-i", input_path,
-            *encoder_args,
-            "-c:a", "aac", "-b:a", "192k",
-            "-map", "0:v:0", "-map", "1:a:0",
-            "-shortest",
-            output_path
-        ]
-        self.log_ffmpeg_command(cmd, "Portrait Merge Audio (MediaPipe)")
-        self._run_ffmpeg_subprocess(cmd)
-        
-        # Cleanup
-        try:
-            os.unlink(temp_video)
-        except:
-            pass
     
     def _calculate_lip_activity(self, face_landmarks, frame_width, frame_height, prev_lip_distance=None):
         """Calculate lip movement activity score"""
@@ -3550,256 +3212,6 @@ Transcript:
             final.extend([shot_median] * len(shot_positions))
         
         return final if final else smoothed
-    
-    def add_hook(self, input_path: str, hook_text: str, output_path: str) -> float:
-        """Add hook scene at the beginning with multi-line yellow text (Fajar Sadboy style)"""
-        
-        # Report TTS character usage
-        self.report_tokens(0, 0, 0, len(hook_text))
-        
-        # Generate TTS audio
-        try:
-            tts_response = self.tts_client.audio.speech.create(
-                model=self.tts_model,
-                voice="nova",
-                input=hook_text,
-                speed=1.0
-            )
-        except APIConnectionError as e:
-            self.log(f"  ❌ TTS API Connection Error: Could not connect to {self.tts_client.base_url}")
-            raise Exception(f"TTS API connection failed!\n\nCould not connect to: {self.tts_client.base_url}\nError: {e}")
-        except RateLimitError as e:
-            self.log(f"  ❌ TTS API Rate Limit: {e}")
-            raise Exception(f"TTS API rate limit exceeded!\n\nPlease wait a moment and try again.\nDetails: {e}")
-        except APIStatusError as e:
-            self.log(f"  ❌ TTS API Error (HTTP {e.status_code}): {e.message}")
-            self.log(f"     Model: {self.tts_model}, Base URL: {self.tts_client.base_url}")
-            raise Exception(
-                f"TTS (Hook) API Error!\n\n"
-                f"Status: {e.status_code}\n"
-                f"Message: {e.message}\n"
-                f"Model: {self.tts_model}\n"
-                f"Base URL: {self.tts_client.base_url}\n\n"
-                f"Check your Hook Maker API settings."
-            )
-        except Exception as e:
-            self.log(f"  ❌ TTS API Unexpected Error: {type(e).__name__}: {e}")
-            raise Exception(f"TTS (Hook) generation failed!\n\nError: {type(e).__name__}: {e}\nModel: {self.tts_model}")
-        
-        tts_file = tempfile.NamedTemporaryFile(suffix='.mp3', delete=False).name
-        with open(tts_file, 'wb') as f:
-            f.write(tts_response.content)
-        
-        # Get TTS duration using ffprobe
-        probe_cmd = [
-            self.ffmpeg_path, "-i", tts_file,
-            "-f", "null", "-"
-        ]
-        result = subprocess.run(probe_cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
-        duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", result.stderr)
-        
-        if duration_match:
-            h, m, s = duration_match.groups()
-            hook_duration = int(h) * 3600 + int(m) * 60 + float(s) + 0.5
-        else:
-            hook_duration = 3.0
-        
-        # Format hook text: uppercase, split into lines (max 3 words per line for better visibility)
-        hook_upper = hook_text.upper()
-        words = hook_upper.split()
-        
-        # Split into lines (max 3 words per line - Fajar Sadboy style)
-        lines = []
-        current_line = []
-        for word in words:
-            current_line.append(word)
-            if len(current_line) >= 3:
-                lines.append(' '.join(current_line))
-                current_line = []
-        if current_line:
-            lines.append(' '.join(current_line))
-        
-        # Get input video info
-        probe_cmd = [self.ffmpeg_path, "-i", input_path]
-        result = subprocess.run(probe_cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
-        
-        # Extract fps
-        fps_match = re.search(r'(\d+(?:\.\d+)?)\s*fps', result.stderr)
-        fps = float(fps_match.group(1)) if fps_match else 30
-        
-        # Extract resolution
-        res_match = re.search(r'(\d{3,4})x(\d{3,4})', result.stderr)
-        if res_match:
-            width, height = int(res_match.group(1)), int(res_match.group(2))
-        else:
-            width, height = 1080, 1920
-        
-        # Create hook video: freeze first frame + TTS audio + text overlay
-        hook_video = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
-        
-        # Build drawtext filter for each line
-        # Style: Yellow/gold text on white background box
-        drawtext_filters = []
-        line_height = 85  # pixels between lines
-        font_size = 58
-        total_text_height = len(lines) * line_height
-        start_y = (height // 3) - (total_text_height // 2)  # Position at upper third
-        
-        for i, line in enumerate(lines):
-            # Escape special characters for FFmpeg drawtext
-            escaped_line = line.replace("'", "'\\''").replace(":", "\\:").replace("\\", "\\\\")
-            y_pos = start_y + (i * line_height)
-            
-            # Yellow/gold text with white box background
-            font_path = self._get_ffmpeg_font_path()
-            drawtext_filters.append(
-                f"drawtext=text='{escaped_line}':"
-                f"{font_path}"
-                f"fontsize={font_size}:"
-                f"fontcolor=#FFD700:"  # Golden yellow
-                f"box=1:"
-                f"boxcolor=white@0.95:"  # White background
-                f"boxborderw=12:"  # Padding around text
-                f"x=(w-text_w)/2:"
-                f"y={y_pos}"
-            )
-        
-        filter_chain = ",".join(drawtext_filters)
-        
-        # Get encoder args
-        encoder_args = self.get_video_encoder_args()
-        
-        # Step 1: Create hook video with frozen frame + text + TTS audio
-        # Use -t to set exact duration, freeze first frame
-        cmd = [
-            self.ffmpeg_path, "-y",
-            "-i", input_path,
-            "-i", tts_file,
-            "-filter_complex",
-            f"[0:v]trim=0:0.04,loop=loop=-1:size=1:start=0,setpts=N/{fps}/TB,{filter_chain},trim=0:{hook_duration},setpts=PTS-STARTPTS[v];"
-            f"[1:a]aresample=44100,apad=whole_dur={hook_duration}[a]",
-            "-map", "[v]",
-            "-map", "[a]",
-            *encoder_args,
-            "-r", str(fps),
-            "-s", f"{width}x{height}",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-ar", "44100",
-            "-ac", "2",
-            "-t", str(hook_duration),
-            hook_video
-        ]
-        self.log_ffmpeg_command(cmd, "Create Hook Video")
-        result = self._run_ffmpeg_subprocess(cmd)
-        
-        if result.returncode != 0:
-            error_lines = result.stderr.split('\n') if result.stderr else []
-            actual_errors = [line for line in error_lines if 'error' in line.lower()]
-            error_msg = '\n'.join(actual_errors[-3:]) if actual_errors else "Unknown error"
-            raise Exception(f"Failed to create hook video: {error_msg}")
-        
-        # Step 2: Re-encode main video to EXACT same format (critical for concat)
-        main_reencoded = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
-        cmd = [
-            self.ffmpeg_path, "-y",
-            "-i", input_path,
-            *encoder_args,
-            "-r", str(fps),
-            "-s", f"{width}x{height}",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-ar", "44100",
-            "-ac", "2",
-            main_reencoded
-        ]
-        self.log_ffmpeg_command(cmd, "Re-encode Main Video")
-        result = self._run_ffmpeg_subprocess(cmd)
-        
-        if result.returncode != 0:
-            error_lines = result.stderr.split('\n') if result.stderr else []
-            actual_errors = [line for line in error_lines if 'error' in line.lower()]
-            error_msg = '\n'.join(actual_errors[-3:]) if actual_errors else "Unknown error"
-            raise Exception(f"Failed to re-encode main video: {error_msg}")
-        
-        # Step 3: Concatenate using concat demuxer (more reliable than filter_complex)
-        concat_list = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False).name
-        with open(concat_list, 'w') as f:
-            f.write(f"file '{hook_video.replace(chr(92), '/')}'\n")
-            f.write(f"file '{main_reencoded.replace(chr(92), '/')}'\n")
-        
-        cmd = [
-            self.ffmpeg_path, "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", concat_list,
-            "-c", "copy",
-            output_path
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
-        
-        # If concat demuxer fails, try filter_complex as fallback
-        if result.returncode != 0:
-            # Extract actual error message (skip ffmpeg version info)
-            error_lines = result.stderr.split('\n') if result.stderr else []
-            actual_errors = [line for line in error_lines if 'error' in line.lower() or 'invalid' in line.lower() or 'failed' in line.lower()]
-            error_summary = '\n'.join(actual_errors[-3:]) if actual_errors else "Unknown concat error"
-            
-            self.log(f"  Concat demuxer failed: {error_summary[:100]}")
-            self.log(f"  Trying filter_complex fallback...")
-            
-            cmd = [
-                self.ffmpeg_path, "-y",
-                "-i", hook_video,
-                "-i", main_reencoded,
-                "-filter_complex",
-                "[0:v:0][0:a:0][1:v:0][1:a:0]concat=n=2:v=1:a=1[outv][outa]",
-                "-map", "[outv]",
-                "-map", "[outa]",
-                *encoder_args,
-                "-c:a", "aac",
-                "-b:a", "192k",
-                output_path
-            ]
-            self.log_ffmpeg_command(cmd, "Concat Hook (filter_complex fallback)")
-            result = self._run_ffmpeg_subprocess(cmd)
-            
-            if result.returncode != 0:
-                # Extract actual error, not version info
-                error_lines = result.stderr.split('\n') if result.stderr else []
-                actual_errors = [line for line in error_lines if 'error' in line.lower() or 'invalid' in line.lower() or 'failed' in line.lower()]
-                error_msg = '\n'.join(actual_errors[-3:]) if actual_errors else result.stderr[-200:] if result.stderr else "Unknown error"
-                raise Exception(f"Failed to concatenate hook video: {error_msg}")
-        
-        # Cleanup
-        try:
-            os.unlink(tts_file)
-        except Exception as e:
-            pass  # Ignore cleanup errors
-        
-        try:
-            os.unlink(hook_video)
-        except Exception as e:
-            pass
-        
-        try:
-            os.unlink(main_reencoded)
-        except Exception as e:
-            pass
-        
-        try:
-            os.unlink(concat_list)
-        except Exception as e:
-            pass
-        
-        # Verify output was created
-        if not os.path.exists(output_path):
-            raise Exception(f"Failed to create hook video at {output_path}")
-        
-        return hook_duration
-    
     
     def create_ass_subtitle_capcut(self, transcript, output_path: str, time_offset: float = 0, style: str = None):
         """Create ASS subtitle file with various subtitle styles"""
@@ -4983,7 +4395,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         progress_callback(0.6)
         
         # Get main (input) video duration, just for progress estimation.
-        probe_cmd = [self.ffmpeg_path, "-i", input_path, "-f", "null", "-"]
+        probe_cmd = [self.ffmpeg_path, "-i", input_path]
         result = subprocess.run(probe_cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
         duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", result.stderr)
         main_duration = 60
@@ -5060,7 +4472,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             raise Exception("Extracted audio file is missing or too small — source clip may have no audio track")
         
         # Get audio duration for token reporting
-        probe_cmd = [self.ffmpeg_path, "-i", audio_file, "-f", "null", "-"]
+        probe_cmd = [self.ffmpeg_path, "-i", audio_file]
         result = subprocess.run(probe_cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
         duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", result.stderr)
         audio_duration = 0
@@ -5110,7 +4522,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         ass_path_escaped = ass_file.replace('\\', '/').replace(':', '\\:')
         
         # Get video duration for progress
-        probe_cmd = [self.ffmpeg_path, "-i", input_path, "-f", "null", "-"]
+        probe_cmd = [self.ffmpeg_path, "-i", input_path]
         result = subprocess.run(probe_cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
         duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", result.stderr)
         video_duration = 60
@@ -5331,3 +4743,133 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             raise Exception("Failed to apply credit watermark")
 
     
+
+    def add_watermark_and_credit_with_progress(self, input_path: str, output_path: str, progress_callback):
+        """Add image watermark AND credit text in ONE FFmpeg pass (combined
+        filter_complex) instead of two sequential full re-encodes. Only
+        called from process_clip when BOTH watermark and credit watermark
+        are enabled at the same time."""
+
+        watermark_path = self.watermark_settings.get("image_path", "")
+        watermark_available = bool(watermark_path) and Path(watermark_path).exists()
+
+        progress_callback(0.1)
+
+        probe_cmd = [self.ffmpeg_path, "-i", input_path]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
+
+        res_match = re.search(r'(\d{3,4})x(\d{3,4})', result.stderr)
+        if res_match:
+            video_width, video_height = int(res_match.group(1)), int(res_match.group(2))
+        else:
+            video_width, video_height = 1080, 1920
+
+        duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", result.stderr)
+        video_duration = 60
+        if duration_match:
+            h, m, s = duration_match.groups()
+            video_duration = int(h) * 3600 + int(m) * 60 + float(s)
+
+        progress_callback(0.2)
+
+        scale = self.watermark_settings.get("scale", 0.15)
+        wm_pos_x = self.watermark_settings.get("position_x", 0.85)
+        wm_pos_y = self.watermark_settings.get("position_y", 0.05)
+        wm_opacity = self.watermark_settings.get("opacity", 0.8)
+        watermark_width = int(video_width * scale)
+        wm_x_pixels = int(wm_pos_x * video_width)
+        wm_y_pixels = int(wm_pos_y * video_height)
+
+        size = self.credit_watermark_settings.get("size", 0.03)
+        cr_pos_x = self.credit_watermark_settings.get("position_x", 0.5)
+        cr_pos_y = self.credit_watermark_settings.get("position_y", 0.95)
+        cr_opacity = self.credit_watermark_settings.get("opacity", 0.7)
+        font_size = int(video_height * size)
+        cr_x_pixels = int(cr_pos_x * video_width)
+        cr_y_pixels = int(cr_pos_y * video_height)
+
+        credit_text = f"Source: {self.channel_name}"
+        credit_text_escaped = credit_text.replace("'", "'\\''").replace(":", "\\:")
+
+        font_file = None
+        if sys.platform == "win32":
+            windows_fonts = [
+                "C:/Windows/Fonts/arial.ttf",
+                "C:/Windows/Fonts/segoeui.ttf",
+                "C:/Windows/Fonts/tahoma.ttf",
+            ]
+            for font in windows_fonts:
+                if Path(font).exists():
+                    font_file = font.replace("\\", "/").replace(":", "\\:")
+                    break
+
+        if font_file:
+            drawtext_filter = (
+                f"drawtext=fontfile='{font_file}':"
+                f"text='{credit_text_escaped}':"
+                f"fontsize={font_size}:"
+                f"fontcolor=white@{cr_opacity}:"
+                f"borderw=2:"
+                f"bordercolor=black@{cr_opacity}:"
+                f"x={cr_x_pixels}-(text_w/2):"
+                f"y={cr_y_pixels}-(text_h/2)"
+            )
+        else:
+            drawtext_filter = (
+                f"drawtext=text='{credit_text_escaped}':"
+                f"fontsize={font_size}:"
+                f"fontcolor=white@{cr_opacity}:"
+                f"borderw=2:"
+                f"bordercolor=black@{cr_opacity}:"
+                f"x={cr_x_pixels}-(text_w/2):"
+                f"y={cr_y_pixels}-(text_h/2)"
+            )
+
+        progress_callback(0.3)
+
+        encoder_args = self.get_video_encoder_args()
+
+        if watermark_available:
+            watermark_escaped = watermark_path.replace('\\', '/').replace(':', '\\:')
+            filter_complex = (
+                f"[1:v]scale={watermark_width}:-1,format=rgba,"
+                f"colorchannelmixer=aa={wm_opacity}[wm];"
+                f"[0:v][wm]overlay={wm_x_pixels}:{wm_y_pixels}[wmed];"
+                f"[wmed]{drawtext_filter}[outv]"
+            )
+            cmd = [
+                self.ffmpeg_path, "-y",
+                "-i", input_path,
+                "-i", watermark_path,
+                "-filter_complex", filter_complex,
+                "-map", "[outv]",
+                "-map", "0:a",
+                *encoder_args,
+                "-pix_fmt", "yuv420p",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                "-progress", "pipe:1",
+                output_path
+            ]
+            desc = "Apply Watermark + Credit (combined single pass)"
+        else:
+            self.log("  Warning: Watermark image not found, applying credit text only")
+            cmd = [
+                self.ffmpeg_path, "-y",
+                "-i", input_path,
+                "-vf", drawtext_filter,
+                *encoder_args,
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                "-progress", "pipe:1",
+                output_path
+            ]
+            desc = "Apply Credit Only (watermark image missing)"
+
+        self.log_ffmpeg_command(cmd, desc)
+
+        self.run_ffmpeg_with_progress(cmd, video_duration,
+            lambda p: progress_callback(0.3 + p * 0.7))
+
+        if not Path(output_path).exists():
+            raise Exception("Failed to apply watermark + credit")

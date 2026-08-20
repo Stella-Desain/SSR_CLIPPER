@@ -631,9 +631,14 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
     
     const results = await Promise.all(savePromises);
     const allOk = results.every(r => r && (r.status === 'ok' || r.status === 'saved'));
-    aiView.fields.status.textContent = allOk ? '\u2713 Saved successfully' : 'Error saving some settings';
-  } catch {
-    aiView.fields.status.textContent = 'Error saving settings';
+    if (!allOk) {
+      const errorMsg = results.map(r => r && r.message ? r.message : '').find(m => m) || 'Error saving some settings';
+      aiView.fields.status.textContent = errorMsg;
+    } else {
+      aiView.fields.status.textContent = '\u2713 Saved successfully';
+    }
+  } catch (err) {
+    aiView.fields.status.textContent = 'Error: ' + err.message;
   }
 });
 

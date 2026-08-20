@@ -230,19 +230,27 @@ class WebAPI:
         return buf.read()
 
     def save_ai_settings(self, settings):
-        if not isinstance(settings, dict):
-            return {"status": "error"}
-        cfg_mgr = self._get_cfg_manager()
-        cfg_mgr.config["ai_providers"] = settings
-        provider_type = settings.get("_provider_type")
-        if provider_type:
-            cfg_mgr.config["provider_type"] = provider_type
-        highlight_finder = settings.get("highlight_finder", {})
-        cfg_mgr.config["api_key"] = highlight_finder.get("api_key", "")
-        cfg_mgr.config["base_url"] = highlight_finder.get("base_url", "https://api.openai.com/v1")
-        cfg_mgr.config["model"] = highlight_finder.get("model", "gpt-4.1")
-        cfg_mgr.save()
-        return {"status": "saved"}
+        try:
+            if not isinstance(settings, dict):
+                return {"status": "error"}
+            cfg_mgr = self._get_cfg_manager()
+            cfg_mgr.config["ai_providers"] = settings
+            provider_type = settings.get("_provider_type")
+            if provider_type:
+                cfg_mgr.config["provider_type"] = provider_type
+            highlight_finder = settings.get("highlight_finder", {})
+            cfg_mgr.config["api_key"] = highlight_finder.get("api_key", "")
+            cfg_mgr.config["base_url"] = highlight_finder.get("base_url", "https://api.openai.com/v1")
+            cfg_mgr.config["model"] = highlight_finder.get("model", "gpt-4.1")
+            
+            repliz_settings = settings.get("repliz")
+            if repliz_settings:
+                cfg_mgr.config["repliz"] = repliz_settings
+            
+            cfg_mgr.save()
+            return {"status": "saved"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False, highlight_finder=True, yt_title_maker=True, campaign_id=None, subtitle_style="capcut", clip_mode="fixed"):
         if self.thread and self.thread.is_alive():
