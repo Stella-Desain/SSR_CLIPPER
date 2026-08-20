@@ -278,69 +278,75 @@ window.Components.HomeView = function () {
 
   const progressCard = document.createElement('div');
   progressCard.className = 'card';
-  progressCard.style.cssText = 'flex:1;display:flex;flex-direction:column;';
+  progressCard.style.cssText = 'flex:1;display:flex;flex-direction:column;background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1rem 1.25rem;';
 
   const progressHeader = document.createElement('div');
-  progressHeader.className = 'card-header';
+  progressHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;';
   const progressCount = document.createElement('span');
   progressCount.id = 'progress-count';
-  progressCount.style.cssText = 'font-size:20px;font-weight:700;';
+  progressCount.style.cssText = 'font-size:20px;font-weight:500;color:var(--text-primary);';
   progressCount.textContent = '0/0';
-  progressHeader.innerHTML = '<h2 class="card-title">Progress</h2>';
+  progressHeader.innerHTML = '<h2 style="margin:0;font-size:16px;font-weight:600;">Progress</h2>';
   progressHeader.appendChild(progressCount);
   progressCard.appendChild(progressHeader);
 
   const progressBody = document.createElement('div');
-  progressBody.className = 'card-body';
   progressBody.style.cssText = 'flex:1;display:flex;flex-direction:column;';
 
-  // Preparing step (replaces 4 old steps)
+  function makeStep(label, statusClass, statusText) {
+    const s = document.createElement('div');
+    s.className = 'step-item';
+    s.style.cssText = 'display:flex;justify-content:space-between;align-items:center;background:var(--surface-1);border-radius:var(--radius);padding:8px 12px;margin-bottom:16px;';
+    s.innerHTML = `<span class="step-label" style="font-size:13px;color:var(--text-primary);">${label}</span><span class="step-status ${statusClass}" style="font-size:11px;font-weight:500;padding:3px 8px;border-radius:20px;">${statusText}</span>`;
+    return s;
+  }
+
+  // Preparing step
   const stepPreparing = makeStep('Preparing (download, transcribe, highlights)', '', 'Waiting');
   progressBody.appendChild(stepPreparing);
 
   // In Progress section
   const inProgressHeader = document.createElement('div');
-  inProgressHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:8px;';
+  inProgressHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
   const inProgressLabel = document.createElement('span');
-  inProgressLabel.className = 'field-label';
+  inProgressLabel.style.cssText = 'font-size:12px;font-weight:500;color:var(--text-secondary);';
   inProgressLabel.textContent = 'In progress';
   const inProgressBadge = document.createElement('span');
-  inProgressBadge.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-muted);';
+  inProgressBadge.style.cssText = 'font-size:11px;color:var(--text-muted);';
   inProgressBadge.textContent = '0';
   inProgressHeader.appendChild(inProgressLabel);
   inProgressHeader.appendChild(inProgressBadge);
   progressBody.appendChild(inProgressHeader);
 
   const inProgressList = document.createElement('div');
-  inProgressList.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+  inProgressList.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:16px;';
   progressBody.appendChild(inProgressList);
 
   // Waiting section
   const waitingHeader = document.createElement('div');
-  waitingHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:8px;';
+  waitingHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
   const waitingLabel = document.createElement('span');
-  waitingLabel.className = 'field-label';
+  waitingLabel.style.cssText = 'font-size:12px;font-weight:500;color:var(--text-secondary);';
   waitingLabel.textContent = 'Waiting';
   const waitingBadge = document.createElement('span');
-  waitingBadge.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-muted);';
+  waitingBadge.style.cssText = 'font-size:11px;color:var(--text-muted);';
   waitingBadge.textContent = '0';
   waitingHeader.appendChild(waitingLabel);
   waitingHeader.appendChild(waitingBadge);
   progressBody.appendChild(waitingHeader);
 
   const waitingList = document.createElement('div');
-  waitingList.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+  waitingList.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:16px;';
   progressBody.appendChild(waitingList);
 
   // Error log section
   const errorHeader = document.createElement('div');
-  errorHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:8px;';
+  errorHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;';
   const errorLabel = document.createElement('span');
-  errorLabel.className = 'field-label';
-  errorLabel.style.color = 'var(--error)';
+  errorLabel.style.cssText = 'font-size:12px;font-weight:500;color:var(--text-secondary);';
   errorLabel.textContent = 'Error log';
   const errorBadge = document.createElement('span');
-  errorBadge.style.cssText = 'font-size:11px;font-weight:700;color:var(--error);';
+  errorBadge.style.cssText = 'font-size:11px;color:#A32D2D;';
   errorBadge.textContent = '0';
   errorHeader.appendChild(errorLabel);
   errorHeader.appendChild(errorBadge);
@@ -350,11 +356,11 @@ window.Components.HomeView = function () {
   errorLogBox.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
   progressBody.appendChild(errorLogBox);
 
-  // Terminal area (Program Log — kept as-is)
+  // Terminal area
   const termHeader = document.createElement('div');
   termHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:6px;';
   const termLabel = document.createElement('span');
-  termLabel.className = 'field-label';
+  termLabel.style.cssText = 'font-size:12px;font-weight:500;color:var(--text-secondary);';
   termLabel.textContent = 'Program Log';
   const termCopyBtn = document.createElement('button');
   termCopyBtn.className = 'btn-ghost';
@@ -367,16 +373,18 @@ window.Components.HomeView = function () {
   const terminal = document.createElement('div');
   terminal.className = 'terminal';
   terminal.id = 'terminal';
+  terminal.style.flex = '1';
   terminal.textContent = 'Ready...';
   progressBody.appendChild(terminal);
 
   // Progress bar
   const progressTrack = document.createElement('div');
   progressTrack.className = 'progress-track';
-  progressTrack.style.marginTop = '12px';
+  progressTrack.style.cssText = 'margin-top:12px;height:4px;background:var(--surface-1);border-radius:2px;overflow:hidden;';
   const progressFill = document.createElement('div');
   progressFill.className = 'progress-fill';
   progressFill.id = 'bar';
+  progressFill.style.cssText = 'height:100%;width:0%;background:#8DC63F;transition:width 0.3s ease;';
   progressTrack.appendChild(progressFill);
   progressBody.appendChild(progressTrack);
 

@@ -18,7 +18,7 @@ class ConfigManager:
     def load(self):
         """Load configuration from file"""
         if self.config_file.exists():
-            with open(self.config_file, "r") as f:
+            with open(self.config_file, "r", encoding="utf-8") as f:
                 config = json.load(f)
                 
                 # Migrate old config to new multi-provider structure
