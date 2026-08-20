@@ -72,12 +72,19 @@ class WebAPI:
         self.output_dir = str(app_dir / "output")
         self.status = "idle"
         self.progress = 0.0
+        self.core = None
         self.thread = None
         self.current_job = None
         self.job_history = []
 
     def get_progress(self):
         return {"status": self.status, "progress": self.progress}
+
+    def get_clips_status(self):
+        """Return per-clip processing state for frontend progress panel."""
+        if self.core:
+            return {"clips": self.core.get_clips_state()}
+        return {"clips": []}
 
     def log_frontend_error(self, message, source="", lineno=0, colno=0, stack=""):
         """Called from JS window.onerror to record frontend errors in error.log"""
@@ -237,7 +244,7 @@ class WebAPI:
         cfg_mgr.save()
         return {"status": "saved"}
 
-    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False, highlight_finder=True, yt_title_maker=True, campaign_id=None, subtitle_style="capcut"):
+    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False, highlight_finder=True, yt_title_maker=True, campaign_id=None, subtitle_style="capcut", clip_mode="fixed"):
         if self.thread and self.thread.is_alive():
             return {"status": "busy"}
         
@@ -254,16 +261,18 @@ class WebAPI:
         
         cfg = self._get_cfg()
         max_highlights = int(cfg.get("max_highlights", 30))
+        fixed_count = int(num_clips) if clip_mode == "fixed" else None
+        min_score = int(cfg.get("ai_decides_min_score", 6)) if clip_mode == "ai" else None
             
         self.thread = threading.Thread(
             target=self._run,
-            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang, bool(portrait), bool(highlight_finder), bool(yt_title_maker), campaign_id, subtitle_style, max_highlights),
+            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang, bool(portrait), bool(highlight_finder), bool(yt_title_maker), campaign_id, subtitle_style, max_highlights, fixed_count, min_score),
             daemon=True,
         )
         self.thread.start()
         return {"status": "started"}
 
-    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang, portrait, highlight_finder, yt_title_maker, campaign_id=None, subtitle_style="capcut", max_highlights=30):
+    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang, portrait, highlight_finder, yt_title_maker, campaign_id=None, subtitle_style="capcut", max_highlights=30, fixed_count=None, min_score=None):
         def log_cb(msg):
             self.status = str(msg)
             if self.current_job:
@@ -340,11 +349,12 @@ class WebAPI:
         # (see _run_ffmpeg_subprocess), so enabling it by default is safe.
         gpu_cfg = cfg.get("gpu_acceleration", {})
         core.enable_gpu_acceleration(bool(gpu_cfg.get("enabled", True)))
+        self.core = core
 
         try:
             self.status = "running"
             self.progress = 0.0
-            core.process(url, num_clips=num_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait, highlight_finder=highlight_finder, yt_title_maker=yt_title_maker, campaign_id=campaign_id, max_highlights=max_highlights)
+            core.process(url, num_clips=num_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait, highlight_finder=highlight_finder, yt_title_maker=yt_title_maker, campaign_id=campaign_id, max_highlights=max_highlights, fixed_count=fixed_count, min_score=min_score)
             self.status = "complete"
             self.progress = 1.0
             if self.current_job:

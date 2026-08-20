@@ -169,20 +169,58 @@ window.Components.HomeView = function () {
   toggles.appendChild(titleToggle.element);
   configBody.appendChild(toggles);
 
-  // Clips input
-  const clipsLabel = document.createElement('label');
-  clipsLabel.className = 'field-label';
-  clipsLabel.style.cssText = 'display:block;margin-top:10px;margin-bottom:6px;';
-  clipsLabel.textContent = 'Number of Clips';
-  configBody.appendChild(clipsLabel);
+  // Clip mode toggle
+  let clipMode = 'fixed';
+  const clipModeLabel = document.createElement('label');
+  clipModeLabel.className = 'field-label';
+  clipModeLabel.style.cssText = 'display:block;margin-top:10px;margin-bottom:6px;';
+  clipModeLabel.textContent = 'Number of clips';
+  configBody.appendChild(clipModeLabel);
+
+  const clipModeRow = document.createElement('div');
+  clipModeRow.style.cssText = 'display:flex;gap:0;margin-bottom:8px;border-radius:8px;overflow:hidden;border:1px solid var(--border);';
+  const btnFixed = document.createElement('button');
+  btnFixed.textContent = 'Fixed number';
+  btnFixed.type = 'button';
+  btnFixed.style.cssText = 'flex:1;padding:8px 12px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--lime);color:#1a1a2e;transition:all 0.2s;';
+  const btnAI = document.createElement('button');
+  btnAI.textContent = 'AI decides';
+  btnAI.type = 'button';
+  btnAI.style.cssText = 'flex:1;padding:8px 12px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text-secondary);transition:all 0.2s;';
+  clipModeRow.appendChild(btnFixed);
+  clipModeRow.appendChild(btnAI);
+  configBody.appendChild(clipModeRow);
+
   const clipsInput = document.createElement('input');
   clipsInput.type = 'number';
   clipsInput.min = '1';
   clipsInput.value = '5';
   clipsInput.className = 'input';
   clipsInput.id = 'clips';
-  clipsInput.style.marginBottom = '10px';
   configBody.appendChild(clipsInput);
+
+  const clipModeHint = document.createElement('div');
+  clipModeHint.style.cssText = 'font-size:11px;color:var(--text-muted);margin-top:4px;margin-bottom:10px;';
+  clipModeHint.textContent = 'Generate this many clips, regardless of score.';
+  configBody.appendChild(clipModeHint);
+
+  const aiNote = document.createElement('div');
+  aiNote.style.cssText = 'background:rgba(163,255,51,0.08);border:1px solid rgba(163,255,51,0.2);border-radius:8px;padding:10px 12px;font-size:11px;color:#3d6b10;margin-bottom:10px;display:none;';
+  aiNote.textContent = 'AI akan menghasilkan sebanyak mungkin clip \u2014 hanya highlight skor sedang & tinggi yang dipakai.';
+  configBody.appendChild(aiNote);
+
+  btnFixed.addEventListener('click', () => {
+    clipMode = 'fixed';
+    btnFixed.style.background = 'var(--lime)'; btnFixed.style.color = '#1a1a2e';
+    btnAI.style.background = 'var(--bg)'; btnAI.style.color = 'var(--text-secondary)';
+    clipsInput.style.display = ''; clipModeHint.style.display = ''; aiNote.style.display = 'none';
+  });
+  btnAI.addEventListener('click', () => {
+    clipMode = 'ai';
+    btnAI.style.background = 'var(--lime)'; btnAI.style.color = '#1a1a2e';
+    btnFixed.style.background = 'var(--bg)'; btnFixed.style.color = 'var(--text-secondary)';
+    clipsInput.style.display = 'none'; clipModeHint.style.display = 'none'; aiNote.style.display = '';
+  });
 
   // Subtitle select
   const subtitleLabel = document.createElement('label');
@@ -256,31 +294,65 @@ window.Components.HomeView = function () {
   progressBody.className = 'card-body';
   progressBody.style.cssText = 'flex:1;display:flex;flex-direction:column;';
 
-  // Steps
-  const steps = document.createElement('div');
-  steps.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:16px;';
+  // Preparing step (replaces 4 old steps)
+  const stepPreparing = makeStep('Preparing (download, transcribe, highlights)', '', 'Waiting');
+  progressBody.appendChild(stepPreparing);
 
-  function makeStep(label, statusClass, statusText) {
-    const s = document.createElement('div');
-    s.className = 'step-item';
-    s.innerHTML = `<span class="step-label">${label}</span><span class="step-status ${statusClass}">${statusText}</span>`;
-    return s;
-  }
+  // In Progress section
+  const inProgressHeader = document.createElement('div');
+  inProgressHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:8px;';
+  const inProgressLabel = document.createElement('span');
+  inProgressLabel.className = 'field-label';
+  inProgressLabel.textContent = 'In progress';
+  const inProgressBadge = document.createElement('span');
+  inProgressBadge.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-muted);';
+  inProgressBadge.textContent = '0';
+  inProgressHeader.appendChild(inProgressLabel);
+  inProgressHeader.appendChild(inProgressBadge);
+  progressBody.appendChild(inProgressHeader);
 
-  const stepDownload = makeStep('Download Clip', '', 'Waiting');
-  const stepHighlight = makeStep('Finding Highlight', '', 'Waiting');
-  const stepEditing = makeStep('Editing', '', 'Waiting');
-  const stepExport = makeStep('Export', '', 'Waiting');
+  const inProgressList = document.createElement('div');
+  inProgressList.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+  progressBody.appendChild(inProgressList);
 
-  steps.appendChild(stepDownload);
-  steps.appendChild(stepHighlight);
-  steps.appendChild(stepEditing);
-  steps.appendChild(stepExport);
-  progressBody.appendChild(steps);
+  // Waiting section
+  const waitingHeader = document.createElement('div');
+  waitingHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:8px;';
+  const waitingLabel = document.createElement('span');
+  waitingLabel.className = 'field-label';
+  waitingLabel.textContent = 'Waiting';
+  const waitingBadge = document.createElement('span');
+  waitingBadge.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-muted);';
+  waitingBadge.textContent = '0';
+  waitingHeader.appendChild(waitingLabel);
+  waitingHeader.appendChild(waitingBadge);
+  progressBody.appendChild(waitingHeader);
 
-  // Terminal area
+  const waitingList = document.createElement('div');
+  waitingList.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+  progressBody.appendChild(waitingList);
+
+  // Error log section
+  const errorHeader = document.createElement('div');
+  errorHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:8px;';
+  const errorLabel = document.createElement('span');
+  errorLabel.className = 'field-label';
+  errorLabel.style.color = 'var(--error)';
+  errorLabel.textContent = 'Error log';
+  const errorBadge = document.createElement('span');
+  errorBadge.style.cssText = 'font-size:11px;font-weight:700;color:var(--error);';
+  errorBadge.textContent = '0';
+  errorHeader.appendChild(errorLabel);
+  errorHeader.appendChild(errorBadge);
+  progressBody.appendChild(errorHeader);
+
+  const errorLogBox = document.createElement('div');
+  errorLogBox.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+  progressBody.appendChild(errorLogBox);
+
+  // Terminal area (Program Log — kept as-is)
   const termHeader = document.createElement('div');
-  termHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;';
+  termHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:16px;margin-bottom:6px;';
   const termLabel = document.createElement('span');
   termLabel.className = 'field-label';
   termLabel.textContent = 'Program Log';
@@ -417,6 +489,7 @@ window.Components.HomeView = function () {
       campaign: campSelect,
       start: startBtn,
       clips: clipsInput,
+      clipMode: () => clipMode,
       subtitle: subtitleSelect,
       subtitleStyle: subtitleStyleSelect,
       portrait: portraitToggle.input,
@@ -433,10 +506,14 @@ window.Components.HomeView = function () {
       terminal,
       termLabel,
       termCopyBtn,
-      stepDownload,
-      stepHighlight,
-      stepEditing,
-      stepExport,
+      stepPreparing,
+      progressCount,
+      inProgressList,
+      inProgressBadge,
+      waitingList,
+      waitingBadge,
+      errorLogBox,
+      errorBadge,
     }
   };
 };

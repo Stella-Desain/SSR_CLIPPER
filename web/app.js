@@ -158,31 +158,18 @@ function lockControls(state) {
 
 function updateStepStatus(status) {
   const statusLower = (status || '').toLowerCase();
-
   function setStep(el, cls, text) {
+    if (!el) return;
     const span = el.querySelector('.step-status');
-    if (span) {
-      span.className = 'step-status ' + cls;
-      span.textContent = text;
-    }
+    if (span) { span.className = 'step-status ' + cls; span.textContent = text; }
   }
-
-  if (statusLower.includes('download')) {
-    setStep(homeView.fields.stepDownload, 'ongoing', 'Ongoing');
-  } else if (statusLower.includes('highlight') || statusLower.includes('finding')) {
-    setStep(homeView.fields.stepDownload, 'complete', 'Complete');
-    setStep(homeView.fields.stepHighlight, 'ongoing', 'Ongoing');
-  } else if (statusLower.includes('edit') || statusLower.includes('process') || statusLower.includes('portrait') || statusLower.includes('caption') || statusLower.includes('hook')) {
-    setStep(homeView.fields.stepDownload, 'complete', 'Complete');
-    setStep(homeView.fields.stepHighlight, 'complete', 'Complete');
-    setStep(homeView.fields.stepEditing, 'ongoing', 'Ongoing');
-  } else if (statusLower.includes('export') || statusLower.includes('saving') || statusLower.includes('complete')) {
-    setStep(homeView.fields.stepDownload, 'complete', 'Complete');
-    setStep(homeView.fields.stepHighlight, 'complete', 'Complete');
-    setStep(homeView.fields.stepEditing, 'complete', 'Complete');
-    setStep(homeView.fields.stepExport, statusLower === 'complete' ? 'complete' : 'ongoing', statusLower === 'complete' ? 'Complete' : 'Ongoing');
+  // Preparing step: mark as ongoing during download/highlight, done when clips start
+  if (statusLower.includes('download') || statusLower.includes('subtitle') || statusLower.includes('transcrib') || statusLower.includes('highlight') || statusLower.includes('finding') || statusLower.includes('checking') || statusLower.includes('segment')) {
+    setStep(homeView.fields.stepPreparing, 'ongoing', 'Ongoing');
+  } else if (statusLower.includes('clip') || statusLower.includes('process') || statusLower.includes('portrait') || statusLower.includes('caption') || statusLower.includes('hook') || statusLower.includes('complete')) {
+    setStep(homeView.fields.stepPreparing, 'complete', 'Done');
   } else if (statusLower.startsWith('error')) {
-    setStep(homeView.fields.stepExport, 'failed', 'Failed');
+    setStep(homeView.fields.stepPreparing, 'failed', 'Failed');
   }
 }
 
@@ -207,6 +194,18 @@ function termInit() {
   homeView.fields.terminal.appendChild(termCurrentLine);
 
   termStartDots('Processing running');
+
+  // Reset clip progress UI
+  if (homeView.fields.inProgressList) homeView.fields.inProgressList.innerHTML = '';
+  if (homeView.fields.waitingList) homeView.fields.waitingList.innerHTML = '';
+  if (homeView.fields.errorLogBox) homeView.fields.errorLogBox.innerHTML = '';
+  if (homeView.fields.progressCount) homeView.fields.progressCount.textContent = '0/0';
+  if (homeView.fields.inProgressBadge) homeView.fields.inProgressBadge.textContent = '0';
+  if (homeView.fields.waitingBadge) homeView.fields.waitingBadge.textContent = '0';
+  if (homeView.fields.errorBadge) homeView.fields.errorBadge.textContent = '0';
+  // Reset preparing step
+  const prepSpan = homeView.fields.stepPreparing ? homeView.fields.stepPreparing.querySelector('.step-status') : null;
+  if (prepSpan) { prepSpan.className = 'step-status'; prepSpan.textContent = 'Waiting'; }
 }
 
 function termStartDots(prefix) {
@@ -285,7 +284,8 @@ async function start() {
       homeView.fields.highlight.checked,
       homeView.fields.ytTitle.checked,
       homeView.fields.campaign ? homeView.fields.campaign.value : "",
-      homeView.fields.subtitleStyle ? homeView.fields.subtitleStyle.value : "capcut"
+      homeView.fields.subtitleStyle ? homeView.fields.subtitleStyle.value : "capcut",
+      homeView.fields.clipMode ? homeView.fields.clipMode() : "fixed"
     );
     if (res && res.status === 'started') {
       poll();
@@ -302,6 +302,83 @@ async function start() {
     termFinish(true);
     lockControls(false);
   }
+}
+
+// ── Clip Card Rendering ──
+function renderClipCard(clip, isRunning) {
+  const card = document.createElement('div');
+  card.style.cssText = 'padding:10px 12px;border:1px solid var(--border-light);border-radius:8px;background:var(--bg);' + (isRunning ? 'border-left:3px solid var(--success);' : '');
+
+  const row1 = document.createElement('div');
+  row1.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;';
+  const title = document.createElement('span');
+  title.style.cssText = 'font-size:12px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+  title.textContent = clip.title || 'Untitled';
+  const score = document.createElement('span');
+  score.style.cssText = 'font-size:10px;font-weight:700;background:rgba(163,255,51,0.15);color:#3d6b10;padding:2px 8px;border-radius:10px;white-space:nowrap;';
+  score.textContent = clip.virality_score != null ? clip.virality_score.toFixed(1) : '?';
+  row1.appendChild(title);
+  row1.appendChild(score);
+  card.appendChild(row1);
+
+  const row2 = document.createElement('div');
+  row2.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-top:4px;';
+  const time = document.createElement('span');
+  time.style.cssText = 'font-size:10px;color:var(--text-muted);';
+  time.textContent = (clip.start_time || '?') + ' - ' + (clip.end_time || '?');
+  const step = document.createElement('span');
+  step.style.cssText = 'font-size:10px;color:' + (isRunning ? 'var(--success)' : 'var(--text-muted)') + ';';
+  step.textContent = isRunning ? (clip.step || 'Processing') : 'Queued';
+  row2.appendChild(time);
+  row2.appendChild(step);
+  card.appendChild(row2);
+
+  if (isRunning && clip.step_progress != null) {
+    const barTrack = document.createElement('div');
+    barTrack.style.cssText = 'height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:6px;';
+    const barFill = document.createElement('div');
+    barFill.style.cssText = 'height:100%;background:var(--success);transition:width 0.3s ease;width:' + Math.min(100, (clip.step_progress * 100)).toFixed(0) + '%;';
+    barTrack.appendChild(barFill);
+    card.appendChild(barTrack);
+  }
+
+  return card;
+}
+
+function renderErrorCard(clip) {
+  const card = document.createElement('div');
+  card.style.cssText = 'padding:8px 12px;background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.15);border-radius:8px;font-size:11px;color:var(--error);';
+  card.textContent = 'Clip ' + clip.index + ' - "' + (clip.title || '?') + '": ' + (clip.error || 'Unknown error');
+  return card;
+}
+
+function renderClipsUI(clips) {
+  if (!clips || clips.length === 0) return;
+
+  const running = clips.filter(c => c.status === 'running').sort((a,b) => a.index - b.index);
+  const waiting = clips.filter(c => c.status === 'waiting').sort((a,b) => a.index - b.index);
+  const errors = clips.filter(c => c.status === 'error').sort((a,b) => a.index - b.index);
+  const done = clips.filter(c => c.status === 'done').length;
+
+  // Update counter
+  if (homeView.fields.progressCount) {
+    homeView.fields.progressCount.textContent = done + '/' + clips.length;
+  }
+
+  // In progress
+  homeView.fields.inProgressList.innerHTML = '';
+  running.forEach(c => homeView.fields.inProgressList.appendChild(renderClipCard(c, true)));
+  if (homeView.fields.inProgressBadge) homeView.fields.inProgressBadge.textContent = running.length;
+
+  // Waiting
+  homeView.fields.waitingList.innerHTML = '';
+  waiting.forEach(c => homeView.fields.waitingList.appendChild(renderClipCard(c, false)));
+  if (homeView.fields.waitingBadge) homeView.fields.waitingBadge.textContent = waiting.length;
+
+  // Errors
+  homeView.fields.errorLogBox.innerHTML = '';
+  errors.forEach(c => homeView.fields.errorLogBox.appendChild(renderErrorCard(c)));
+  if (homeView.fields.errorBadge) homeView.fields.errorBadge.textContent = errors.length;
 }
 
 async function poll() {
@@ -348,6 +425,12 @@ async function poll() {
     }
 
     updateStepStatus(status);
+
+    // Poll per-clip status
+    try {
+      const cs = await window.pywebview.api.get_clips_status();
+      if (cs && cs.clips) renderClipsUI(cs.clips);
+    } catch {}
 
     if (status && (status.startsWith('error') || status === 'complete')) {
       clearInterval(polling);
@@ -573,7 +656,8 @@ async function validateAndLoad(kind) {
           { name: 'OpenAI', url: aiView.fields.hfUrl, key: aiView.fields.hfKey },
           { name: 'Gemini', url: { value: GEMINI_BASE_URL }, key: aiView.fields.hmKey },
           { name: 'Custom1', url: aiView.fields.cmUrl, key: aiView.fields.cmKey },
-          { name: 'Custom2', url: aiView.fields.cpUrl, key: aiView.fields.cpKey }
+          { name: 'Custom2', url: aiView.fields.cpUrl, key: aiView.fields.cpKey },
+          { name: 'Custom3', url: aiView.fields.c3Url, key: aiView.fields.c3Key }
       ];
 
       // Add local models
@@ -605,7 +689,7 @@ async function validateAndLoad(kind) {
       }
 
       // Buang entry yang gak punya prefix provider valid (misal sisa data lama sebelum sistem prefix ada)
-      const VALID_PREFIX_RE = /^\[(OpenAI|Gemini|Custom1|Custom2|Local)\]\s/;
+      const VALID_PREFIX_RE = /^\[(OpenAI|Gemini|Custom1|Custom2|Custom3|Local)\]\s/;
       allModels = allModels.filter(m => VALID_PREFIX_RE.test(m));
 
       // Buang duplikat exact-string (misal provider ngirim model ID yang sama 2x)
@@ -684,6 +768,11 @@ async function validateAndLoad(kind) {
         const pref = aiView.fields.ytModel.value;
         setSelectOptions(aiView.fields.ytModel, ytModels, pref);
         if (homeView.fields.ytTitleSub) setSelectOptions(homeView.fields.ytTitleSub, ytModels, pref);
+      }
+      // Brief Extractor model — pakai chat models, sama seperti hfModel/ytModel
+      if (aiView.fields.beModel) {
+        const pref = aiView.fields.beModel.value;
+        setSelectOptions(aiView.fields.beModel, hfModels, pref);
       }
       
       if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
@@ -792,6 +881,10 @@ function resolveModelPayloadForTest(modelField) {
       model = model.replace("[Custom2] ", "");
       targetUrl = aiView.fields.cpUrl ? aiView.fields.cpUrl.value.trim() : "";
       targetKey = aiView.fields.cpKey ? aiView.fields.cpKey.value.trim() : "";
+  } else if (model.startsWith("[Custom3] ")) {
+      model = model.replace("[Custom3] ", "");
+      targetUrl = aiView.fields.c3Url ? aiView.fields.c3Url.value.trim() : "";
+      targetKey = aiView.fields.c3Key ? aiView.fields.c3Key.value.trim() : "";
   } else if (model.startsWith("[Local] ")) {
       model = model.replace("[Local] ", "");
       modelType = 'local';
@@ -852,6 +945,10 @@ if (aiView.fields.hmModelTestBtn) {
 if (aiView.fields.ytModelTestBtn) {
   aiView.fields.ytModelTestBtn.addEventListener('click', () =>
     testModelReadiness(aiView.fields.ytModel, aiView.fields.ytModelTestBtn, aiView.fields.ytModelStatus));
+}
+if (aiView.fields.beModelTestBtn) {
+  aiView.fields.beModelTestBtn.addEventListener('click', () =>
+    testModelReadiness(aiView.fields.beModel, aiView.fields.beModelTestBtn, aiView.fields.beModelStatus));
 }
 
 async function loadReplizData() {

@@ -186,6 +186,8 @@ class AutoClipperCore:
         self.set_progress = progress_callback or (lambda s, p: None)
         self.report_tokens = token_callback or (lambda gi, go, w, t: None)
         self.is_cancelled = cancel_check or (lambda: False)
+        self.clips_state = {}
+        self.clips_state_lock = threading.Lock()
         
         # GPU acceleration settings
         self.gpu_enabled = False
@@ -605,14 +607,18 @@ KONTEN
 Transcript:
 {transcript}"""
     
-    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True, campaign_id: str = None, max_highlights: int = 30):
+    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True, campaign_id: str = None, max_highlights: int = 30, fixed_count: int = None, min_score: int = 6):
         """Main processing pipeline"""
         
         # TODO: logic highlight_finder/yt_title_maker belum diimplementasi di core
         
-        # Step 1: Download video
-        self.set_progress("Downloading video...", 0.1)
-        video_path, srt_path, video_info = self.download_video(url)
+        # Step 1: Try subtitle-only first (lightweight, no video download)
+        self.set_progress("Checking subtitles...", 0.05)
+        video_path = None
+        try:
+            srt_path, video_info = self.download_subtitle_only(url)
+        except Exception:
+            srt_path, video_info = None, None
         
         # Store channel name for credit watermark
         self.channel_name = video_info.get("channel", "") if video_info else ""
@@ -620,18 +626,24 @@ Transcript:
         if self.is_cancelled():
             return
         
-        # Step 2: Get transcript (YouTube subtitle if available, else transcribe)
+        # Step 2: Get transcript
         if srt_path:
             self.set_progress("Parsing subtitles...", 0.15)
             self.log("📄 Using YouTube subtitle")
             transcript = self.parse_srt(srt_path)
         else:
-            self.set_progress("Transcribing video (no subtitle found)...", 0.15)
-            self.log("🎤 No subtitle found — transcribing with Whisper...")
+            # Must download full video for Whisper transcription
+            self.set_progress("Downloading video...", 0.1)
+            video_path, _, video_info_dl = self.download_video(url)
+            if video_info_dl:
+                video_info = video_info_dl
+                self.channel_name = video_info.get("channel", "") if video_info else ""
+            self.set_progress("Transcribing video...", 0.15)
+            self.log("🎤 No subtitle — transcribing with Whisper...")
             transcript = self.transcribe_full_video(video_path)
         
         self.set_progress("Finding highlights...", 0.3)
-        highlights = self.find_highlights(transcript, video_info, max_highlights)
+        highlights = self.find_highlights(transcript, video_info, max_highlights, fixed_count=fixed_count, min_score=min_score)
         
         if self.is_cancelled():
             return
@@ -657,6 +669,65 @@ Transcript:
         # Step 4: Assign conflict groups before dispatching to workers
         self._assign_conflict_groups(highlights)
         
+        # Step 4b: Determine video source for each clip
+        clip_sources = {}  # conflict_group_id -> (video_path, pre_cut)
+        
+        if video_path:
+            # Full video already downloaded (no-subtitle path or full download)
+            for h in highlights:
+                clip_sources[h["conflict_group_id"]] = (str(video_path), False)
+        else:
+            # Calculate unique duration coverage vs total video length
+            ranges = [(self.parse_timestamp(h["start_time"]), self.parse_timestamp(h["end_time"])) for h in highlights]
+            unique_duration = self._calc_unique_duration(ranges)
+            total_duration = video_info.get("duration") or 1
+            
+            if unique_duration / total_duration > 0.5:
+                # More than half the video needed — download full once
+                self.set_progress("Downloading full video...", 0.2)
+                self.log(f"📥 Highlights cover {unique_duration/total_duration:.0%} of video — downloading full")
+                video_path, _, _ = self.download_video(url)
+                for h in highlights:
+                    clip_sources[h["conflict_group_id"]] = (str(video_path), False)
+            else:
+                # Download per conflict group segment
+                self.log(f"✂️ Highlights cover {unique_duration/total_duration:.0%} of video — downloading segments only")
+                groups = {}
+                for h in highlights:
+                    gid = h["conflict_group_id"]
+                    s = self.parse_timestamp(h["start_time"])
+                    e = self.parse_timestamp(h["end_time"])
+                    if gid not in groups:
+                        groups[gid] = [s, e]
+                    else:
+                        groups[gid][0] = min(groups[gid][0], s)
+                        groups[gid][1] = max(groups[gid][1], e)
+                
+                for i, (gid, (gs, ge)) in enumerate(groups.items()):
+                    self.set_progress(f"Downloading segment {i+1}/{len(groups)}...", 0.2 + 0.08 * i / max(len(groups), 1))
+                    seg_path = str(video_folder / f"segment_{gid}.mp4")
+                    start_ts = self._seconds_to_srt_timestamp(gs)
+                    end_ts = self._seconds_to_srt_timestamp(ge)
+                    self.download_video_section(url, start_ts, end_ts, seg_path)
+                    clip_sources[gid] = (seg_path, True)
+                    self.log(f"  ✓ Segment {gid}: {start_ts} — {end_ts}")
+
+        # Build per-clip state tracking
+        self.clips_state = {
+            i: {
+                "index": i,
+                "title": h.get("title"),
+                "virality_score": h.get("virality_score"),
+                "start_time": h.get("start_time"),
+                "end_time": h.get("end_time"),
+                "status": "waiting",
+                "step": "Queued",
+                "step_progress": 0.0,
+                "error": None,
+            }
+            for i, h in enumerate(highlights, 1)
+        }
+
         # Pre-init MediaPipe in main thread if needed (thread safety)
         if portrait and self.face_tracking_mode == "mediapipe":
             self._init_mediapipe()
@@ -671,16 +742,22 @@ Transcript:
         clip_errors = []
         
         def _worker(index, highlight):
+            gid = highlight["conflict_group_id"]
+            src_path, is_pre_cut = clip_sources[gid]
+            self._update_clip_state(index, status="running", step="Starting")
             try:
                 self.process_clip(
-                    video_path, highlight, index, total_clips,
+                    src_path, highlight, index, total_clips,
                     add_captions=add_captions, add_hook=add_hook,
                     portrait=portrait, campaign_id=campaign_id,
+                    pre_cut=is_pre_cut,
                     completed_counter=(completed_count, completed_lock, total_clips),
                 )
+                self._update_clip_state(index, status="done", step="Done", step_progress=1.0)
             except Exception as e:
                 clip_errors.append((index, highlight.get("title", "?"), str(e)))
                 self.log(f"  ❌ Clip {index} failed: {e}")
+                self._update_clip_state(index, status="error", error=str(e))
             finally:
                 with completed_lock:
                     completed_count[0] += 1
@@ -854,6 +931,7 @@ Transcript:
                         "title": info.get("title", ""),
                         "description": (info.get("description", "") or "")[:2000],
                         "channel": info.get("channel", ""),
+                        "duration": info.get("duration"),
                     }
                     self.log(f"  Title: {video_info['title'][:50]}...")
                 
@@ -995,6 +1073,7 @@ Transcript:
                     "title": yt_data.get("title", ""),
                     "description": yt_data.get("description", "")[:2000],
                     "channel": yt_data.get("channel", ""),
+                    "duration": yt_data.get("duration"),
                 }
                 self.log(f"  Title: {video_info['title'][:50]}...")
             except json.JSONDecodeError:
@@ -1556,6 +1635,7 @@ Transcript:
                         "title": info.get("title", ""),
                         "description": (info.get("description", "") or "")[:2000],
                         "channel": info.get("channel", ""),
+                        "duration": info.get("duration"),
                     }
                     self.log(f"  Title: {video_info['title'][:50]}...")
             
@@ -1633,6 +1713,7 @@ Transcript:
                     "title": yt_data.get("title", ""),
                     "description": yt_data.get("description", "")[:2000],
                     "channel": yt_data.get("channel", ""),
+                    "duration": yt_data.get("duration"),
                 }
                 self.log(f"  Title: {video_info['title'][:50]}...")
             except json.JSONDecodeError:
@@ -2486,8 +2567,33 @@ Transcript:
         s = seconds % 60
         ms = int((s - int(s)) * 1000)
         return f"{h:02d}:{m:02d}:{int(s):02d},{ms:03d}"
+    def _update_clip_state(self, index, **fields):
+        """Thread-safe update of a single clip's state."""
+        with self.clips_state_lock:
+            if index in self.clips_state:
+                self.clips_state[index].update(fields)
     
-    
+    def get_clips_state(self) -> list:
+        """Return current state of all clips as a list (thread-safe)."""
+        if not self.clips_state:
+            return []
+        with self.clips_state_lock:
+            return list(self.clips_state.values())
+
+    def _calc_unique_duration(self, ranges: list) -> float:
+        """Calculate total unique duration from list of (start, end) tuples, merging overlaps."""
+        if not ranges:
+            return 0.0
+        sorted_ranges = sorted(ranges, key=lambda r: r[0])
+        merged = [list(sorted_ranges[0])]
+        for s, e in sorted_ranges[1:]:
+            if s <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], e)
+            else:
+                merged.append([s, e])
+        return sum(e - s for s, e in merged)
+
+
     def _assign_conflict_groups(self, highlights: list):
         """Assign conflict_group_id to overlapping highlights.
         
@@ -2534,7 +2640,7 @@ Transcript:
         
         self.log(f"  📊 Assigned {counter} conflict groups to {n} highlights")
     
-    def find_highlights(self, transcript: str, video_info: dict, max_highlights: int = 30) -> list:
+    def find_highlights(self, transcript: str, video_info: dict, max_highlights: int = 30, fixed_count: int = None, min_score: int = None) -> list:
         """Find highlights using AI (OpenAI-compatible API)"""
         self.log(f"[2/4] Finding highlights (using {self.model})...")
         
@@ -2700,9 +2806,22 @@ Transcript:
             
         # Sort by virality score (highest first) and apply safety cap
         valid.sort(key=lambda h: h.get("virality_score", 5), reverse=True)
-        if len(valid) > max_highlights:
-            self.log(f"  ℹ️ {len(valid)} valid highlights found, capping to top {max_highlights} by virality score")
-            valid = valid[:max_highlights]
+        if fixed_count is not None:
+            if len(valid) > fixed_count:
+                self.log(f"  ℹ️ {len(valid)} valid highlights found, taking top {fixed_count} (fixed count mode)")
+            valid = valid[:fixed_count]
+        elif min_score is not None:
+            before = len(valid)
+            valid = [h for h in valid if h.get("virality_score", 5) >= min_score]
+            if before != len(valid):
+                self.log(f"  ℹ️ Filtered {before} → {len(valid)} highlights (min_score={min_score})")
+            if len(valid) > max_highlights:
+                self.log(f"  ℹ️ Capping to top {max_highlights} by virality score")
+                valid = valid[:max_highlights]
+        else:
+            if len(valid) > max_highlights:
+                self.log(f"  ℹ️ {len(valid)} valid highlights found, capping to top {max_highlights} by virality score")
+                valid = valid[:max_highlights]
         
         self.log(f"\n✅ {len(valid)} highlights found, sorted by virality score")
         return valid
@@ -2768,6 +2887,7 @@ Transcript:
             
             print(f"[DEBUG] clip_progress: {status} (overall: {overall*100:.1f}%)")
             self.set_progress(status, overall)
+            self._update_clip_state(index, step=step_name, step_progress=(step_num + sub_progress) / total_steps)
         
         current_step = 0
         
