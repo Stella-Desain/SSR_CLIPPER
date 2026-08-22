@@ -360,9 +360,21 @@ class WebAPI:
             core.enable_gpu_acceleration(bool(gpu_cfg.get("enabled", True)))
             self.core = core
 
+            dur_min = 58
+            dur_max = 120
+            if campaign_id:
+                for c in cfg.get("campaigns", []):
+                    if c.get("id") == campaign_id:
+                        brief = c.get("brief", {})
+                        c_min = brief.get("durasi_min")
+                        c_max = brief.get("durasi_max")
+                        if c_min is not None and str(c_min).isdigit(): dur_min = int(c_min)
+                        if c_max is not None and str(c_max).isdigit(): dur_max = int(c_max)
+                        break
+
             self.status = "running"
             self.progress = 0.0
-            core.process(url, num_clips=num_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait, highlight_finder=highlight_finder, yt_title_maker=yt_title_maker, campaign_id=campaign_id, max_highlights=max_highlights, fixed_count=fixed_count, min_score=min_score)
+            core.process(url, num_clips=num_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait, highlight_finder=highlight_finder, yt_title_maker=yt_title_maker, campaign_id=campaign_id, max_highlights=max_highlights, fixed_count=fixed_count, min_score=min_score, dur_min=dur_min, dur_max=dur_max)
             self.status = "complete"
             self.progress = 1.0
             if self.current_job:

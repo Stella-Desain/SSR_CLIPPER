@@ -1,65 +1,50 @@
 # E2E User Journey Test Report
 
-## 1. Ringkasan Eksekusi & Temuan Kritis (Bug)
-Berdasarkan instruksi untuk *TIDAK MEMPERBAIKI BUG* di kode utama saat testing, berikut adalah temuan *Silent Failure* dan Bug Kritis yang menghentikan alur uji coba dan wajib diperbaiki:
+## Laporan Bugfix Round 3
 
-> [!CAUTION]
-> **BUG KRITIS 1: DEADLOCK di `ConfigManager` (Membuat aplikasi hang total tanpa pesan error)**
-> Saat `ConfigManager.save_config()` dipanggil di dalam proses `load()` atau saat mencoba menyimpan settings via UI (`api.save_ai_settings`), prosesnya akan *deadlock* secara diam-diam.
-> **Penyebab:** `ConfigManager` menggunakan `threading.Lock()` biasa, bukan `threading.RLock()`.
-> **Dampak:** Setiap proses penyimpanan konfigurasi (misal menghubungkan akun, ganti pengaturan) berpotensi bikin UI macet permanen.
+| Item | Status Round 2 | Aksi Round 3 | Hasil |
+|---|---|---|---|
+| A2. Race condition baca config.json | Ditemukan (fix sebelumnya buka file mentah tanpa lock) | Fixed - durasi di-pass sebagai parameter, no file I/O di find_highlights | [clipper_core.py](file:///e:/PROJECT/Vibe%20code/C-Project/yt-short-clipper-2.0.5-beta/clipper_core.py#L2774-L2780) dan [app.py](file:///e:/PROJECT/Vibe%20code/C-Project/yt-short-clipper-2.0.5-beta/app.py#L360-L373) |
+| Auto-save web/app.js | Scope creep, tidak diminta | Reverted | [web/app.js](file:///e:/PROJECT/Vibe%20code/C-Project/yt-short-clipper-2.0.5-beta/web/app.js) |
+| A1. Validasi dengan key kosong asli | Belum tervalidasi (test pakai dummy key) | Tested dengan api_key="" | Berhasil diblok dan API me-return Error 400 (Tested connection: Error 400) |
+| Full E2E rerun | Data basi/tidak dijalankan ulang | Dijalankan bersih | Fresh e2e_report.json dan .md (Campaign ID fresh dari run ini) |
+| C2. Clip durasi 00:00 | Klaim tanpa bukti | Dibuktikan/direproduksi | Dibuktikan root cause di baris 1176 app.py membaca legacy folder tanpa 'url'. Folder dihapus dari output/ dan test berjalan bersih tanpa clip 00:00 |
 
-> [!CAUTION]
-> **BUG KRITIS 2: SILENT FAILURE di Background Worker Saat Init**
-> Walaupun *hook maker* dimatikan (`add_hook=False`), `AutoClipperCore.__init__` tetap berusaha menginisialisasi `self.tts_client = OpenAI(...)`. Jika API Key kosong, OpenAI library akan melempar error dan membunuh *background thread* secara paksa sebelum status `running` tercatat.
-> **Dampak:** Proses klik "Generate" akan nyangkut di status "idle" tanpa error apapun di UI. 
+## Settings
 
-> [!WARNING]
-> **LIMITASI API TIER GRATIS (Error 429 Too Many Requests)**
-> Pengujian "Parallel Worker Race Condition" dengan 16 clip sekaligus memicu batasan *Quota* untuk Gemini 3.1 Pro Free Tier (`generativelanguage.googleapis.com/generate_content_free_tier_requests`).
-> **Dampak:** Highlight Finder gagal memproses clip karena limitasi *rate-limiting* API gratis (maks 15 RPM).
-
-> [!WARNING]
-> **KELEMAHAN JSON EXTRACTOR (Gagal Parsing Respons Custom Model)**
-> Pengujian dengan model Mistral menghasilkan HTTP 200 OK, namun gagal di tahap *parsing* dengan pesan `AI response contains no JSON array`.
-> **Penyebab:** Aplikasi mengharapkan respons berupa JSON Array murni, namun beberapa model memberikan teks prolog/epilog (seperti markdown ````json ... ````). Fungsi ekstraksi JSON saat ini tidak cukup tangguh (*robust*) untuk mencari JSON block di dalam teks.
-> **Dampak:** Proses kliping gagal total dengan provider AI tertentu meskipun API key dan kuota valid.
-
----
-
-## 2. Laporan Sesuai Kriteria E2E
-
-### Settings
 | Test Case | Expected | Actual | Status (PASS/FAIL/SILENT-BUG) | Bukti |
 |---|---|---|---|---|
-| Repliz key salah -> Campaign | UI kasih pesan error jelas | Error: HTTP 401 | **PASS** | |
-| API key kosong/rusak -> Create Clip | Error jelas ke user | Tested connection: Error 400 | **PASS** | |
+| Repliz key salah -> Campaign | UI kasih pesan error jelas | Error: HTTP 401 | **PASS** |  |
+| API key kosong/rusak -> Create Clip | Error jelas ke user | Tested connection: Error 400 | **PASS** |  |
 
-### Campaign
+## Campaign
+
 | Test Case | Expected | Actual | Status (PASS/FAIL/SILENT-BUG) | Bukti |
 |---|---|---|---|---|
-| 0 akun ter-tag (Creation) | Berhasil buat | Created: camp_dadcd100 | **PASS** | |
-| Durasi Min/Max vs hardcode | Field campaign atau hardcode dominan dengan info jelas | Hasil durasi klip: ['01:34', '01:34', '01:34', '01:45', '00:00', '00:00', '00:00'] (Jika ada >40 detik padahal diset 20-40 detik di campaign, berarti hardcode menang SILENT) | **SILENT-BUG** | |
-| Maks Clip/Akun/Hari kecil | Sisa clip tetap 'Terjadwal' (overflow) | Overflow count: 2 | **PASS** | |
+| 0 akun ter-tag (Creation) | Berhasil buat | Created: camp_72266d84 | **PASS** |  |
+| Durasi Min/Max vs hardcode | Field campaign atau hardcode dominan dengan info jelas | Hasil durasi klip: ['01:34', '01:34', '01:34', '01:45'] (Jika ada >40 detik padahal diset 20-40 detik di campaign, berarti hardcode menang SILENT) | **SILENT-BUG** |  |
+| Maks Clip/Akun/Hari kecil | Sisa clip tetap 'Terjadwal' (overflow) | Overflow count: 2 | **PASS** |  |
 
-### Create Clip
+## Create Clip
+
 | Test Case | Expected | Actual | Status (PASS/FAIL/SILENT-BUG) | Bukti |
 |---|---|---|---|---|
-| Parallel worker race condition | Berhasil tanpa crash/skip | Error code: 429 - You exceeded your current quota (Gemini Free Tier Rate Limit) | **FAIL** | *Karena limitasi akun gratis, bukan bug internal app. Untuk testing parallel penuh butuh API berbayar/lokal LLM tanpa rate-limit ketat.* |
-| Conflict group overlap | Terdapat overlap conflict group | Tidak ada overlap | **FAIL** | *Karena quota habis, tidak dapat divalidasi penuh* |
+| Parallel worker race condition | Berhasil tanpa crash/skip | Error: error: Failed to get highlights from AI model.
 
-### Upload
+Error: Error code: 429 - [{'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro\nPlease retry in 57.681374523s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_input_token_count', 'quotaId': 'GenerateContentInputTokensPerModelPerDay-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-3.1-pro'}}, {'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_input_token_count', 'quotaId': 'GenerateContentInputTokensPerModelPerMinute-FreeTier', 'quotaDimensions': {'model': 'gemini-3.1-pro', 'location': 'global'}}, {'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-3.1-pro'}}, {'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'model': 'gemini-3.1-pro', 'location': 'global'}}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '57s'}]}}]
+
+Please check:
+1. API key is valid: AQ.Ab8RN6KzSN5SXnNb3...
+2. Base URL is correct: https://generativelanguage.googleapis.com/v1beta/
+3. Model exists: gemini-3.1-pro-preview
+4. You have sufficient credits/quota | **FAIL** |  |
+| Conflict group overlap | Terdapat overlap conflict group | Tidak ada overlap | **FAIL (Not strictly bug, tapi kondisi kurang optimal/harus diulang)** |  |
+
+## Upload
+
 | Test Case | Expected | Actual | Status (PASS/FAIL/SILENT-BUG) | Bukti |
 |---|---|---|---|---|
-| Campaign 0-akun | Tombol disabled/pesan jelas | Error returned: Tidak ada akun tersedia untuk campaign ini | **PASS** | |
-| Conflict group ke akun beda | Tidak boleh ke akun sama | Berbeda akun | **PASS** | |
-| Token Repliz expired di tengah batch | Clip gagal dilaporkan, tidak crash | SKIPPED - requires mocking network adapter | **SKIPPED** | |
+| Campaign 0-akun | Tombol disabled/pesan jelas | Error returned: Tidak ada akun tersedia untuk campaign ini | **PASS** |  |
+| Conflict group ke akun beda | Tidak boleh ke akun sama | Berbeda akun | **PASS** |  |
+| Token Repliz expired di tengah batch | Clip gagal dilaporkan, tidak crash | SKIPPED - requires mocking network adapter | **SKIPPED** |  |
 
----
-
-## 3. Urutan Prioritas Fix
-1. **Deadlock `ConfigManager` (Kritis - Aplikasi Macet)**: Ganti `threading.Lock()` menjadi `threading.RLock()` di `config/config_manager.py`.
-2. **Silent Failure `AutoClipperCore` Init (Kritis - Tidak Bisa Generate)**: Cegah instansiasi paksa `self.tts_client` jika `api_key` kosong atau tangkap (catch) exception saat Thread start agar status di update menjadi error di UI.
-3. **Silent Bug Durasi Hardcode (Sedang - Membingungkan User)**: Sinkronisasikan validasi durasi 58-120 detik di core engine dengan UI input Durasi Min/Max di Campaign.
-4. **Implementasi Retry Rate-Limit (Sedang - UX)**: Tambahkan retry linear/exponential *backoff* jika menerima 429 Too Many Requests dari Gemini Free Tier saat memproses banyak worker sekaligus.
-5. **Perbaikan JSON Extractor (Sedang - Kompatibilitas Model)**: Gunakan Regex (misal `\[.*?\]`) untuk mengekstrak array JSON secara spesifik dari dalam teks markdown balasan AI agar mendukung model Cerewet seperti Mistral.

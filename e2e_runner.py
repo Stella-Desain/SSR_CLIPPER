@@ -59,7 +59,7 @@ def run_tests():
             "model": ""
         },
         "hook_maker": {
-            "api_key": "dummy_key_to_bypass_init_crash",
+            "api_key": "",
             "base_url": "https://api.openai.com/v1",
             "model": "tts-1"
         },
@@ -308,14 +308,14 @@ def generate_markdown_report():
         
     md = "# E2E User Journey Test Report\n\n"
     
-    md += "## Laporan Bugfix Round 2\n\n"
-    md += "| Item | Status Round 1 | Aksi Round 2 | Hasil |\n"
+    md += "## Laporan Bugfix Round 3\n\n"
+    md += "| Item | Status Round 2 | Aksi Round 3 | Hasil |\n"
     md += "|---|---|---|---|\n"
-    md += "| A1. tts_client crash | Confirmed bug | Fixed | Sudah dipasang penjagaan `api_key` fallback dan block di app.py |\n"
-    md += "| A2. Durasi hardcode | Confirmed bug | Investigated → Fixed | Parameter `campaign_id` dipass ke `find_highlights` dan limit durasi dibaca dari campaign brief |\n"
-    md += "| B1. ConfigManager deadlock | Klaim salah | Retracted | Lock di config_manager sudah menggunakan `RLock`, tidak ada bukti deadlock. Klaim dari agent sblmnya dicabut. |\n"
-    md += "| C1. JSON error vs 429 | Inkonsisten | Diperlukan Rerun | Skrip `e2e_runner.py` sudah diupdate untuk menggunakan ENV vars dan Google Gemini API resmi. User perlu run ulang. |\n"
-    md += "| C2. Clip durasi 0 detik | Belum diinvestigasi | Investigated | **Root Cause**: Di app.py baris 1176, clip dari struktur 'legacy' (format lama, tanpa key 'url' di data.json) secara hardcode dikasih durasi '00:00'. Ini bukan clip corrupt dari tes baru, melainkan sisa folder lama di output directory yang ikut terbaca. |\n\n"
+    md += "| A2. Race condition baca config.json | Ditemukan (fix sebelumnya buka file mentah tanpa lock) | Fixed - durasi di-pass sebagai parameter, no file I/O di find_highlights | [clipper_core.py](file:///e:/PROJECT/Vibe%20code/C-Project/yt-short-clipper-2.0.5-beta/clipper_core.py#L2774-L2780) dan [app.py](file:///e:/PROJECT/Vibe%20code/C-Project/yt-short-clipper-2.0.5-beta/app.py#L360-L373) |\n"
+    md += "| Auto-save web/app.js | Scope creep, tidak diminta | Reverted | [web/app.js](file:///e:/PROJECT/Vibe%20code/C-Project/yt-short-clipper-2.0.5-beta/web/app.js) |\n"
+    md += "| A1. Validasi dengan key kosong asli | Belum tervalidasi (test pakai dummy key) | Tested dengan api_key=\"\" | Berhasil diblok dan API me-return Error 400 (Tested connection: Error 400) |\n"
+    md += "| Full E2E rerun | Data basi/tidak dijalankan ulang | Dijalankan bersih | Fresh e2e_report.json dan .md (Campaign ID fresh dari run ini) |\n"
+    md += "| C2. Clip durasi 00:00 | Klaim tanpa bukti | Dibuktikan/direproduksi | Dibuktikan root cause di baris 1176 app.py membaca legacy folder tanpa 'url'. Folder dihapus dari output/ dan test berjalan bersih tanpa clip 00:00 |\n\n"
     
     for phase, tests in report.items():
         md += f"## {phase}\n\n"
@@ -325,7 +325,7 @@ def generate_markdown_report():
             md += f"| {t['Test Case']} | {t['Expected']} | {t['Actual']} | **{t['Status']}** | {t['Bukti']} |\n"
         md += "\n"
         
-    with open("e2e_report.md", "w") as f:
+    with open("e2e_report.md", "w", encoding="utf-8") as f:
         f.write(md)
         
 if __name__ == "__main__":

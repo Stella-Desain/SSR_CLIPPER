@@ -613,7 +613,7 @@ KONTEN
 Transcript:
 {transcript}"""
     
-    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True, campaign_id: str = None, max_highlights: int = 30, fixed_count: int = None, min_score: int = 6):
+    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True, campaign_id: str = None, max_highlights: int = 30, fixed_count: int = None, min_score: int = 6, dur_min: int = 58, dur_max: int = 120):
         """Main processing pipeline"""
         
         # TODO: logic highlight_finder/yt_title_maker belum diimplementasi di core
@@ -649,7 +649,7 @@ Transcript:
             transcript = self.transcribe_full_video(video_path)
         
         self.set_progress("Finding highlights...", 0.3)
-        highlights = self.find_highlights(transcript, video_info, max_highlights, fixed_count=fixed_count, min_score=min_score, campaign_id=campaign_id)
+        highlights = self.find_highlights(transcript, video_info, max_highlights, fixed_count=fixed_count, min_score=min_score, dur_min=dur_min, dur_max=dur_max)
         
         if self.is_cancelled():
             return
@@ -2643,7 +2643,7 @@ Transcript:
         
         self.log(f"  📊 Assigned {counter} conflict groups to {n} highlights")
     
-    def find_highlights(self, transcript: str, video_info: dict, max_highlights: int = 30, fixed_count: int = None, min_score: int = None, campaign_id: str = None) -> list:
+    def find_highlights(self, transcript: str, video_info: dict, max_highlights: int = 30, fixed_count: int = None, min_score: int = None, dur_min: int = 58, dur_max: int = 120) -> list:
         """Find highlights using AI (OpenAI-compatible API)"""
         self.log(f"[2/4] Finding highlights (using {self.model})...")
         
@@ -2777,27 +2777,6 @@ Transcript:
                 self.log(f"\n📄 Full AI Response:\n{result}")
                 raise Exception("AI response contains no JSON array. Full response logged above.")
         
-        # Determine duration limits
-        dur_min = 58
-        dur_max = 120
-        if campaign_id:
-            try:
-                import json
-                from utils.helpers import get_app_dir
-                with open(get_app_dir() / "config.json", "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-                for c in cfg.get("campaigns", []):
-                    if c.get("id") == campaign_id:
-                        brief = c.get("brief", {})
-                        c_min = brief.get("durasi_min")
-                        c_max = brief.get("durasi_max")
-                        if c_min is not None and str(c_min).isdigit(): dur_min = int(c_min)
-                        if c_max is not None and str(c_max).isdigit(): dur_max = int(c_max)
-                        self.log(f"  ℹ️ Using custom duration from campaign: {dur_min}s - {dur_max}s")
-                        break
-            except Exception as e:
-                self.log(f"  ⚠ Failed to read campaign duration, using default 58s-120s: {e}")
-
         valid = []
         for h in highlights:
             # Fallback: convert "reason" to "description" if exists
