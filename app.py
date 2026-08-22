@@ -322,44 +322,44 @@ class WebAPI:
             "model_size": whisper_model_name if whisper_model_name != "api" else "large-v3-turbo"
         }
 
-        core = AutoClipperCore(
-            client=None,
-            ffmpeg_path=get_ffmpeg_path(),
-            ytdlp_path=get_ytdlp_path(),
-            output_dir=output_dir,
-            model=model,
-            tts_model=tts_model,
-            temperature=temperature,
-            system_prompt=system_prompt,
-            watermark_settings=watermark_settings,
-            credit_watermark_settings=credit_watermark_settings,
-            hook_style_settings=hook_style_settings,
-            face_tracking_mode=face_tracking_mode,
-            mediapipe_settings=mediapipe_settings,
-            ai_providers=ai_providers,
-            subtitle_language=subtitle_lang,
-            local_whisper_settings=local_whisper_settings,
-            subtitle_style=subtitle_style,
-            log_callback=log_cb,
-            progress_callback=lambda s, p=None: progress_cb(p if p is not None else 0.0),
-        )
-
-        # NOTE: this was previously never called anywhere, so the "GPU
-        # Acceleration" toggle in Settings had zero effect on processing -
-        # every clip was always encoded on CPU (libx264) regardless of what
-        # the user selected. Every FFmpeg encode step in the pipeline
-        # (cut, portrait merge, hook, captions, watermark...) goes through
-        # get_video_encoder_args(), which only returns GPU args if this is
-        # called with enabled=True. GPUDetector's encoder settings target
-        # equivalent visual quality to the CPU CRF 18 default (cq 19 /
-        # global_quality 19 / qp 18-19, tuned per vendor), and any runtime
-        # GPU encoder failure already falls back to CPU automatically
-        # (see _run_ffmpeg_subprocess), so enabling it by default is safe.
-        gpu_cfg = cfg.get("gpu_acceleration", {})
-        core.enable_gpu_acceleration(bool(gpu_cfg.get("enabled", True)))
-        self.core = core
-
         try:
+            core = AutoClipperCore(
+                client=None,
+                ffmpeg_path=get_ffmpeg_path(),
+                ytdlp_path=get_ytdlp_path(),
+                output_dir=output_dir,
+                model=model,
+                tts_model=tts_model,
+                temperature=temperature,
+                system_prompt=system_prompt,
+                watermark_settings=watermark_settings,
+                credit_watermark_settings=credit_watermark_settings,
+                hook_style_settings=hook_style_settings,
+                face_tracking_mode=face_tracking_mode,
+                mediapipe_settings=mediapipe_settings,
+                ai_providers=ai_providers,
+                subtitle_language=subtitle_lang,
+                local_whisper_settings=local_whisper_settings,
+                subtitle_style=subtitle_style,
+                log_callback=log_cb,
+                progress_callback=lambda s, p=None: progress_cb(p if p is not None else 0.0),
+            )
+
+            # NOTE: this was previously never called anywhere, so the "GPU
+            # Acceleration" toggle in Settings had zero effect on processing -
+            # every clip was always encoded on CPU (libx264) regardless of what
+            # the user selected. Every FFmpeg encode step in the pipeline
+            # (cut, portrait merge, hook, captions, watermark...) goes through
+            # get_video_encoder_args(), which only returns GPU args if this is
+            # called with enabled=True. GPUDetector's encoder settings target
+            # equivalent visual quality to the CPU CRF 18 default (cq 19 /
+            # global_quality 19 / qp 18-19, tuned per vendor), and any runtime
+            # GPU encoder failure already falls back to CPU automatically
+            # (see _run_ffmpeg_subprocess), so enabling it by default is safe.
+            gpu_cfg = cfg.get("gpu_acceleration", {})
+            core.enable_gpu_acceleration(bool(gpu_cfg.get("enabled", True)))
+            self.core = core
+
             self.status = "running"
             self.progress = 0.0
             core.process(url, num_clips=num_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait, highlight_finder=highlight_finder, yt_title_maker=yt_title_maker, campaign_id=campaign_id, max_highlights=max_highlights, fixed_count=fixed_count, min_score=min_score)

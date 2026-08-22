@@ -1,0 +1,80 @@
+{
+  "Settings": [
+    {
+      "Test Case": "Repliz key salah -> Campaign",
+      "Expected": "UI kasih pesan error jelas",
+      "Actual": "Error: HTTP 401",
+      "Status": "PASS",
+      "Bukti": ""
+    },
+    {
+      "Test Case": "API key kosong/rusak -> Create Clip",
+      "Expected": "Error jelas ke user",
+      "Actual": "Tested connection: Error 400",
+      "Status": "PASS",
+      "Bukti": ""
+    }
+  ],
+  "Campaign": [
+    {
+      "Test Case": "0 akun ter-tag (Creation)",
+      "Expected": "Berhasil buat",
+      "Actual": "Created: camp_0dab320a",
+      "Status": "PASS",
+      "Bukti": ""
+    },
+    {
+      "Test Case": "Durasi Min/Max vs hardcode",
+      "Expected": "Field campaign atau hardcode dominan dengan info jelas",
+      "Actual": "Hasil durasi klip: ['01:34', '01:34', '01:34', '01:45', '00:00', '00:00', '00:00'] (Jika ada >40 detik padahal diset 20-40 detik di campaign, berarti hardcode menang SILENT)",
+      "Status": "SILENT-BUG",
+      "Bukti": ""
+    },
+    {
+      "Test Case": "Maks Clip/Akun/Hari kecil",
+      "Expected": "Sisa clip tetap 'Terjadwal' (overflow)",
+      "Actual": "Overflow count: 2",
+      "Status": "PASS",
+      "Bukti": ""
+    }
+  ],
+  "Create Clip": [
+    {
+      "Test Case": "Parallel worker race condition",
+      "Expected": "Berhasil tanpa crash/skip",
+      "Actual": "Error: error: AI response contains no JSON array. Full response logged above.",
+      "Status": "FAIL",
+      "Bukti": ""
+    },
+    {
+      "Test Case": "Conflict group overlap",
+      "Expected": "Terdapat overlap conflict group",
+      "Actual": "Tidak ada overlap",
+      "Status": "FAIL (Not strictly bug, tapi kondisi kurang optimal/harus diulang)",
+      "Bukti": ""
+    }
+  ],
+  "Upload": [
+    {
+      "Test Case": "Campaign 0-akun",
+      "Expected": "Tombol disabled/pesan jelas",
+      "Actual": "Error returned: Tidak ada akun tersedia untuk campaign ini",
+      "Status": "PASS",
+      "Bukti": ""
+    },
+    {
+      "Test Case": "Conflict group ke akun beda",
+      "Expected": "Tidak boleh ke akun sama",
+      "Actual": "Berbeda akun",
+      "Status": "PASS",
+      "Bukti": ""
+    },
+    {
+      "Test Case": "Token Repliz expired di tengah batch",
+      "Expected": "Clip gagal dilaporkan, tidak crash",
+      "Actual": "SKIPPED - requires mocking network adapter",
+      "Status": "SKIPPED",
+      "Bukti": ""
+    }
+  ]
+}

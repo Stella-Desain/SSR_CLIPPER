@@ -642,6 +642,22 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
   }
 });
 
+// Auto-save logic for AI Settings
+let aiSaveTimeout = null;
+aiView.element.addEventListener('input', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+    clearTimeout(aiSaveTimeout);
+    aiSaveTimeout = setTimeout(() => {
+      if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
+    }, 1000);
+  }
+});
+aiView.element.addEventListener('change', (e) => {
+  if (e.target.tagName === 'SELECT' || e.target.type === 'checkbox' || e.target.type === 'radio') {
+    if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
+  }
+});
+
 // ── Provider Button Listeners ──
 aiView.fields.providerButtons.forEach(btn => {
   btn.addEventListener('click', () => setProviderType(btn.dataset.provider, true));

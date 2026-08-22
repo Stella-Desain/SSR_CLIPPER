@@ -11,19 +11,21 @@ from pathlib import Path
 class ConfigManager:
     """Manages application configuration"""
     
+    _file_lock = threading.RLock()
+    
     def __init__(self, config_file: Path, output_dir: Path):
         self.config_file = config_file
         self.output_dir = output_dir
-        self._lock = threading.Lock()
         self.config = self.load()
     
     def load(self):
         """Load configuration from file"""
         if self.config_file.exists():
-            with open(self.config_file, "r", encoding="utf-8") as f:
-                config = json.load(f)
+            with self._file_lock:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    config = json.load(f)
                 
-                # Migrate old config to new multi-provider structure
+            # Migrate old config to new multi-provider structure
                 if "api_key" in config and "ai_providers" not in config:
                     config = self._migrate_to_multi_provider(config)
                 
@@ -149,6 +151,11 @@ class ConfigManager:
                 "base_url": "https://api.openai.com/v1",
                 "api_key": "",
                 "model": "gpt-4.1"
+            },
+            "brief_extractor": {
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "",
+                "model": "gpt-4.1"
             }
         }
     
@@ -190,18 +197,32 @@ class ConfigManager:
     
     def save_config(self, config):
         """Save configuration dict to file (atomic write to prevent corruption)"""
-        import tempfile, os
-        with self._lock:
+        import tempfile, os, time
+        with self._file_lock:
             tmp_path = self.config_file.with_suffix(".tmp")
             try:
                 with open(tmp_path, "w", encoding="utf-8") as f:
                     json.dump(config, f, indent=2, ensure_ascii=False)
                     f.flush()
                     os.fsync(f.fileno())
-                os.replace(tmp_path, self.config_file)  # atomic on same filesystem
+                
+                # Retry loop for Windows PermissionError (file in use)
+                retries = 10
+                for i in range(retries):
+                    try:
+                        os.replace(tmp_path, self.config_file)
+                        break
+                    except PermissionError:
+                        if i < retries - 1:
+                            time.sleep(0.1)
+                        else:
+                            raise
             except Exception:
                 if tmp_path.exists():
-                    tmp_path.unlink(missing_ok=True)
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except:
+                        pass
                 raise
     
     def get(self, key, default=None):

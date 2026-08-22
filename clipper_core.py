@@ -128,8 +128,10 @@ class AutoClipperCore:
         if self.ai_providers:
             # Highlight Finder client
             hf_config = self.ai_providers.get("highlight_finder", {})
+            hf_api_key = hf_config.get("api_key", "")
+            if not hf_api_key: hf_api_key = "not-configured"
             self.highlight_client = OpenAI(
-                api_key=hf_config.get("api_key", ""),
+                api_key=hf_api_key,
                 base_url=hf_config.get("base_url", "https://api.openai.com/v1")
             )
             self.model = hf_config.get("model", model)
@@ -138,8 +140,10 @@ class AutoClipperCore:
             cm_config = self.ai_providers.get("caption_maker", {})
             self.whisper_model = cm_config.get("model", "whisper-1")
             if not self.local_whisper_settings.get("enabled"):
+                cm_api_key = cm_config.get("api_key", "")
+                if not cm_api_key: cm_api_key = "not-configured"
                 self.caption_client = OpenAI(
-                    api_key=cm_config.get("api_key", ""),
+                    api_key=cm_api_key,
                     base_url=cm_config.get("base_url", "https://api.openai.com/v1"),
                     timeout=600.0  # 10 minutes for large audio files
                 )
@@ -148,8 +152,10 @@ class AutoClipperCore:
             
             # Hook Maker client (TTS)
             hm_config = self.ai_providers.get("hook_maker", {})
+            hm_api_key = hm_config.get("api_key", "")
+            if not hm_api_key: hm_api_key = "not-configured"
             self.tts_client = OpenAI(
-                api_key=hm_config.get("api_key", ""),
+                api_key=hm_api_key,
                 base_url=hm_config.get("base_url", "https://api.openai.com/v1")
             )
             self.tts_model = hm_config.get("model", tts_model)
@@ -643,7 +649,7 @@ Transcript:
             transcript = self.transcribe_full_video(video_path)
         
         self.set_progress("Finding highlights...", 0.3)
-        highlights = self.find_highlights(transcript, video_info, max_highlights, fixed_count=fixed_count, min_score=min_score)
+        highlights = self.find_highlights(transcript, video_info, max_highlights, fixed_count=fixed_count, min_score=min_score, campaign_id=campaign_id)
         
         if self.is_cancelled():
             return
@@ -2637,7 +2643,7 @@ Transcript:
         
         self.log(f"  📊 Assigned {counter} conflict groups to {n} highlights")
     
-    def find_highlights(self, transcript: str, video_info: dict, max_highlights: int = 30, fixed_count: int = None, min_score: int = None) -> list:
+    def find_highlights(self, transcript: str, video_info: dict, max_highlights: int = 30, fixed_count: int = None, min_score: int = None, campaign_id: str = None) -> list:
         """Find highlights using AI (OpenAI-compatible API)"""
         self.log(f"[2/4] Finding highlights (using {self.model})...")
         
@@ -2771,7 +2777,27 @@ Transcript:
                 self.log(f"\n📄 Full AI Response:\n{result}")
                 raise Exception("AI response contains no JSON array. Full response logged above.")
         
-        # Filter by duration (min 58s, max 120s)
+        # Determine duration limits
+        dur_min = 58
+        dur_max = 120
+        if campaign_id:
+            try:
+                import json
+                from utils.helpers import get_app_dir
+                with open(get_app_dir() / "config.json", "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                for c in cfg.get("campaigns", []):
+                    if c.get("id") == campaign_id:
+                        brief = c.get("brief", {})
+                        c_min = brief.get("durasi_min")
+                        c_max = brief.get("durasi_max")
+                        if c_min is not None and str(c_min).isdigit(): dur_min = int(c_min)
+                        if c_max is not None and str(c_max).isdigit(): dur_max = int(c_max)
+                        self.log(f"  ℹ️ Using custom duration from campaign: {dur_min}s - {dur_max}s")
+                        break
+            except Exception as e:
+                self.log(f"  ⚠ Failed to read campaign duration, using default 58s-120s: {e}")
+
         valid = []
         for h in highlights:
             # Fallback: convert "reason" to "description" if exists
@@ -2792,13 +2818,13 @@ Transcript:
                 h["description"] = h.get("title", "No description")
                 self.log(f"  ⚠ Missing description for '{h.get('title', 'Unknown')}', using title")
             
-            if 58 <= duration <= 120:
+            if dur_min <= duration <= dur_max:
                 valid.append(h)
                 virality = h.get("virality_score", 5)
                 self.log(f"  ✓ {h['title']} ({duration:.0f}s) [🔥 {virality}/10]")
-            elif duration > 120:
+            elif duration > dur_max:
                 self.log(f"  ✗ {h['title']} ({duration:.0f}s) - Too long, skipped")
-            elif duration < 58:
+            elif duration < dur_min:
                 self.log(f"  ✗ {h['title']} ({duration:.0f}s) - Too short, skipped")
             
         # Sort by virality score (highest first) and apply safety cap
