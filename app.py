@@ -430,7 +430,7 @@ class WebAPI:
 
     def get_repliz_dashboard_url(self):
         """Returns the URL for Repliz Dashboard."""
-        return "https://dashboard.repliz.com"
+        return "https://repliz.com/user/dashboard"
 
     def get_account_stats(self):
         """Returns statistics of connected social accounts, broken down by platform."""
@@ -579,7 +579,7 @@ class WebAPI:
         try:
             shutil.copy2(file_path, dest_path)
             # Make relative to app dir
-            rel_path = f"campaign_assets/{campaign_id}{ext}"
+            rel_path = str(dest_path)
             
             # Update campaign
             cfg = self._get_cfg()

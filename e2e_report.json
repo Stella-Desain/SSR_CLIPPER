@@ -19,21 +19,7 @@
     {
       "Test Case": "0 akun ter-tag (Creation)",
       "Expected": "Berhasil buat",
-      "Actual": "Created: camp_72266d84",
-      "Status": "PASS",
-      "Bukti": ""
-    },
-    {
-      "Test Case": "Durasi Min/Max vs hardcode",
-      "Expected": "Field campaign atau hardcode dominan dengan info jelas",
-      "Actual": "Hasil durasi klip: ['01:34', '01:34', '01:34', '01:45'] (Jika ada >40 detik padahal diset 20-40 detik di campaign, berarti hardcode menang SILENT)",
-      "Status": "SILENT-BUG",
-      "Bukti": ""
-    },
-    {
-      "Test Case": "Maks Clip/Akun/Hari kecil",
-      "Expected": "Sisa clip tetap 'Terjadwal' (overflow)",
-      "Actual": "Overflow count: 2",
+      "Actual": "Created: camp_29a8b887",
       "Status": "PASS",
       "Bukti": ""
     }
@@ -42,39 +28,17 @@
     {
       "Test Case": "Parallel worker race condition",
       "Expected": "Berhasil tanpa crash/skip",
-      "Actual": "Error: error: Failed to get highlights from AI model.\n\nError: Error code: 429 - [{'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro\\nPlease retry in 57.681374523s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_input_token_count', 'quotaId': 'GenerateContentInputTokensPerModelPerDay-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-3.1-pro'}}, {'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_input_token_count', 'quotaId': 'GenerateContentInputTokensPerModelPerMinute-FreeTier', 'quotaDimensions': {'model': 'gemini-3.1-pro', 'location': 'global'}}, {'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-3.1-pro'}}, {'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'model': 'gemini-3.1-pro', 'location': 'global'}}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '57s'}]}}]\n\nPlease check:\n1. API key is valid: AQ.Ab8RN6KzSN5SXnNb3...\n2. Base URL is correct: https://generativelanguage.googleapis.com/v1beta/\n3. Model exists: gemini-3.1-pro-preview\n4. You have sufficient credits/quota",
+      "Actual": "Error: error: Gagal mendownload bagian video (termasuk fallback)!\n\nError: ERROR: [youtube] O73ELFEJSoc: The page needs to be reloaded.\n\nDiagnostic Info:\n- FFmpeg Path: E:\\PROJECT\\Vibe code\\C-Project\\yt-short-clipper-2.0.5-beta\\ffmpeg\\ffmpeg.exe\n- Fallback force_keyframes_at_cuts: False\n- Yt-Dlp Logs:\nWARN: [youtube] O73ELFEJSoc: ios client https formats require a GVS PO Token which was not provided. They will be skipped as they may yield HTTP Error 403. You can manually pass a GVS PO Token for this client with --extractor-args \"youtube:po_token=ios.gvs+XXX\". For more information, refer to  https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide\nERR: ERROR: [youtube] O73ELFEJSoc: The page needs to be reloaded.",
       "Status": "FAIL",
       "Bukti": ""
     },
     {
-      "Test Case": "Conflict group overlap",
-      "Expected": "Terdapat overlap conflict group",
-      "Actual": "Tidak ada overlap",
-      "Status": "FAIL (Not strictly bug, tapi kondisi kurang optimal/harus diulang)",
+      "Test Case": "Hasil klip",
+      "Expected": "Ada klip ter-generate",
+      "Actual": "Klip kosong (silent fail/error saat generate)",
+      "Status": "FAIL",
       "Bukti": ""
     }
   ],
-  "Upload": [
-    {
-      "Test Case": "Campaign 0-akun",
-      "Expected": "Tombol disabled/pesan jelas",
-      "Actual": "Error returned: Tidak ada akun tersedia untuk campaign ini",
-      "Status": "PASS",
-      "Bukti": ""
-    },
-    {
-      "Test Case": "Conflict group ke akun beda",
-      "Expected": "Tidak boleh ke akun sama",
-      "Actual": "Berbeda akun",
-      "Status": "PASS",
-      "Bukti": ""
-    },
-    {
-      "Test Case": "Token Repliz expired di tengah batch",
-      "Expected": "Clip gagal dilaporkan, tidak crash",
-      "Actual": "SKIPPED - requires mocking network adapter",
-      "Status": "SKIPPED",
-      "Bukti": ""
-    }
-  ]
+  "Upload": []
 }

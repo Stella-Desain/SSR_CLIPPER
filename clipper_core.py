@@ -2654,10 +2654,22 @@ Transcript:
 - Channel: {video_info.get('channel', 'Unknown')}
 - Deskripsi: {video_info.get('description', '')[:500]}"""
         
-        # Replace placeholders safely (avoid .format() which breaks on user's curly braces)
         prompt = self.system_prompt.replace("{num_clips}", "30")  # backward compat for old user prompts
         prompt = prompt.replace("{video_context}", video_context)
         prompt = prompt.replace("{transcript}", transcript)
+        
+        # Override durasi in prompt (Bug A2 Fix)
+        # We append this at the end to ensure it overrides any hardcoded defaults in the system_prompt
+        duration_override = (
+            f"\n\n==================================================\n"
+            f"ATURAN DURASI OVERRIDE (DARI CAMPAIGN/CONFIG)\n"
+            f"==================================================\n"
+            f"* ABAIKAN aturan durasi lain yang mungkin disebutkan sebelumnya.\n"
+            f"* Setiap clip HARUS berdurasi antara {dur_min} sampai {dur_max} detik.\n"
+            f"* Target ideal: {(dur_min + dur_max) // 2} detik.\n"
+            f"* Pastikan perhitungan (end_time - start_time) dari timestamp WAJIB di rentang {dur_min}-{dur_max} detik.\n"
+        )
+        prompt += duration_override
         
         # Warn if required placeholders are missing
         if "{transcript}" in self.system_prompt and "{transcript}" in prompt:
@@ -2816,7 +2828,7 @@ Transcript:
             before = len(valid)
             valid = [h for h in valid if h.get("virality_score", 5) >= min_score]
             if before != len(valid):
-                self.log(f"  ℹ️ Filtered {before} → {len(valid)} highlights (min_score={min_score})")
+                self.log(f"  ℹ️ Filtered {before} -> {len(valid)} highlights (min_score={min_score})")
             if len(valid) > max_highlights:
                 self.log(f"  ℹ️ Capping to top {max_highlights} by virality score")
                 valid = valid[:max_highlights]

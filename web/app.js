@@ -490,7 +490,7 @@ if (installBtn) {
 }
 
 // ── Save AI Settings ──
-aiView.fields.saveBtn.addEventListener('click', async () => {
+async function persistAiSettings() {
   // Use Custom Provider as fallback for empty keys to enable a "Global Provider" workflow
   const cpUrl = aiView.fields.cpUrl ? aiView.fields.cpUrl.value.trim() : "";
   const cpKey = aiView.fields.cpKey ? aiView.fields.cpKey.value.trim() : "";
@@ -640,8 +640,21 @@ aiView.fields.saveBtn.addEventListener('click', async () => {
   } catch (err) {
     aiView.fields.status.textContent = 'Error: ' + err.message;
   }
-});
+}
+aiView.fields.saveBtn.addEventListener('click', persistAiSettings);
 
+let aiAutoSaveTimeout = null;
+aiView.element.addEventListener('input', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+    clearTimeout(aiAutoSaveTimeout);
+    aiAutoSaveTimeout = setTimeout(() => { persistAiSettings(); }, 800);
+  }
+});
+aiView.element.addEventListener('change', (e) => {
+  if (e.target.tagName === 'SELECT' || e.target.type === 'checkbox' || e.target.type === 'radio') {
+    persistAiSettings();
+  }
+});
 
 // ── Provider Button Listeners ──
 aiView.fields.providerButtons.forEach(btn => {
@@ -1002,6 +1015,7 @@ if (aiView.fields.replizTestBtn) {
             if (res.status === 'success') {
                 aiView.fields.replizStatus.textContent = '✓ Connected successfully';
                 aiView.fields.replizStatus.style.color = 'var(--success)';
+                await persistAiSettings();
                 loadReplizData();
             } else {
                 aiView.fields.replizStatus.textContent = '✗ ' + (res.message || 'Connection failed');

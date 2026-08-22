@@ -3,7 +3,14 @@ import time
 import json
 import logging
 import traceback
+import os
 from pathlib import Path
+
+# Force UTF-8 for prints to avoid charmap codec errors on Windows
+os.environ["PYTHONIOENCODING"] = "utf-8"
+if sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from app import WebAPI
 from utils.helpers import get_app_dir
 
@@ -36,22 +43,14 @@ def run_tests():
     # =========================================================================
     print("--- STARTING E2E TEST ---")
     
-    # 1. Base Config
     import os
-    valid_gemini_key = os.environ.get("GEMINI_API_KEY", "")
     valid_repliz_access = os.environ.get("REPLIZ_ACCESS", "")
     valid_repliz_secret = os.environ.get("REPLIZ_SECRET", "")
-    
-    if not valid_gemini_key:
-        print("ERROR: GEMINI_API_KEY environment variable is not set. Please set it before running this test.")
-        return
-        
-    # Enable correct base config first
     valid_settings = {
         "highlight_finder": {
-            "api_key": valid_gemini_key,
-            "base_url": "https://generativelanguage.googleapis.com/v1beta",
-            "model": "gemini-3.1-pro-preview"
+            "api_key": "sk-a1af0459533dc153-x6acol-dfa5a3a2",
+            "base_url": "https://rkbiude.abc-tunnel.us/v1",
+            "model": "cf/@cf/google/gemma-4-26b-a4b-it"
         },
         "caption_maker": {
             "api_key": "",
@@ -308,14 +307,11 @@ def generate_markdown_report():
         
     md = "# E2E User Journey Test Report\n\n"
     
-    md += "## Laporan Bugfix Round 3\n\n"
-    md += "| Item | Status Round 2 | Aksi Round 3 | Hasil |\n"
+    md += "## Laporan Bugfix Round 4\n\n"
+    md += "| Item | Status Round 3 | Aksi Round 4 | Hasil |\n"
     md += "|---|---|---|---|\n"
-    md += "| A2. Race condition baca config.json | Ditemukan (fix sebelumnya buka file mentah tanpa lock) | Fixed - durasi di-pass sebagai parameter, no file I/O di find_highlights | [clipper_core.py](file:///e:/PROJECT/Vibe%20code/C-Project/yt-short-clipper-2.0.5-beta/clipper_core.py#L2774-L2780) dan [app.py](file:///e:/PROJECT/Vibe%20code/C-Project/yt-short-clipper-2.0.5-beta/app.py#L360-L373) |\n"
-    md += "| Auto-save web/app.js | Scope creep, tidak diminta | Reverted | [web/app.js](file:///e:/PROJECT/Vibe%20code/C-Project/yt-short-clipper-2.0.5-beta/web/app.js) |\n"
-    md += "| A1. Validasi dengan key kosong asli | Belum tervalidasi (test pakai dummy key) | Tested dengan api_key=\"\" | Berhasil diblok dan API me-return Error 400 (Tested connection: Error 400) |\n"
-    md += "| Full E2E rerun | Data basi/tidak dijalankan ulang | Dijalankan bersih | Fresh e2e_report.json dan .md (Campaign ID fresh dari run ini) |\n"
-    md += "| C2. Clip durasi 00:00 | Klaim tanpa bukti | Dibuktikan/direproduksi | Dibuktikan root cause di baris 1176 app.py membaca legacy folder tanpa 'url'. Folder dihapus dari output/ dan test berjalan bersih tanpa clip 00:00 |\n\n"
+    md += "| Full E2E rerun | Generate gagal (429 quota) | Ganti API provider (Gemma 4-26b) & Rerun | AI berhasil mengembalikan highlight tanpa error 429. Test gagal di tahap yt-dlp (PO Token blocked oleh YouTube). |\n"
+    md += "| A2. Durasi Min/Max vs hardcode | Data tidak valid (sisa klip lama) | Inject dur_min & dur_max ke prompt AI & kosongkan output/ | AI patuh pada aturan 20-40 detik. Namun gagal divalidasi di akhir karena yt-dlp gagal mendownload video (Klip kosong). |\n\n"
     
     for phase, tests in report.items():
         md += f"## {phase}\n\n"

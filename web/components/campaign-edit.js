@@ -246,8 +246,6 @@ window.Components.CampaignEditView = function () {
   bannerInput.accept = 'image/*';
   bannerInput.style.display = 'none';
 
-  bannerPreview.addEventListener('click', () => bannerInput.click());
-
   const statsDiv = document.createElement('div');
   statsDiv.style.cssText = 'margin-top:16px;text-align:left;font-size:14px;color:var(--text-muted);display:none;';
   

@@ -277,25 +277,27 @@ window.Components.DashboardView = function () {
       const sW = section.querySelector('#status-whisper');
       if(sW) sW.style.background = deps.whisper ? '#8DC63F' : '#EF4444';
 
-      // Load Account Stats
-      const accStats = await window.pywebview.api.get_account_stats();
-      if (accStats) {
-        const campCountEl = section.querySelector('#dash-campaigns-count');
-        if (campCountEl) campCountEl.textContent = accStats.campaigns + ' Campaign';
-        
-        const tikCountEl = section.querySelector('#dash-tiktok-count');
-        if (tikCountEl) tikCountEl.textContent = accStats.tiktok_count;
-        
-        const ytCountEl = section.querySelector('#dash-youtube-count');
-        if (ytCountEl) ytCountEl.textContent = accStats.youtube_count;
-
-        const igCountEl = section.querySelector('#dash-instagram-count');
-        if (igCountEl) igCountEl.textContent = accStats.instagram_count;
-      }
-
       // Load Campaigns Tree
       let campaigns = [];
       try { campaigns = await window.pywebview.api.get_campaigns(); } catch(e) {}
+
+      // Load Account Stats
+      const campCountEl = section.querySelector('#dash-campaigns-count');
+      if (campCountEl) campCountEl.textContent = campaigns.length + ' Campaign';
+
+      const accStats = await window.pywebview.api.get_account_stats();
+      const tikCountEl = section.querySelector('#dash-tiktok-count');
+      const ytCountEl = section.querySelector('#dash-youtube-count');
+      const igCountEl = section.querySelector('#dash-instagram-count');
+      if (accStats && !accStats.error) {
+        if (tikCountEl) tikCountEl.textContent = accStats.tiktok_count;
+        if (ytCountEl) ytCountEl.textContent = accStats.youtube_count;
+        if (igCountEl) igCountEl.textContent = accStats.instagram_count;
+      } else {
+        if (tikCountEl) tikCountEl.textContent = '0';
+        if (ytCountEl) ytCountEl.textContent = '0';
+        if (igCountEl) igCountEl.textContent = '0';
+      }
       if (campaigns && campaigns.length > 0) {
         treeContainer.innerHTML = '';
         campaigns.forEach((camp, idx) => {

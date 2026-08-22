@@ -265,9 +265,18 @@ async function refreshCampaignList() {
     title.style.cssText = 'margin:0;font-size:18px;font-weight:600;';
     title.textContent = c.name;
     
-    const status = document.createElement('span');
-    status.style.cssText = `font-size:12px;padding:4px 8px;border-radius:12px;align-self:flex-start;${c.status === 'active' ? 'background:#e6f4ea;color:#137333;' : 'background:#f1f3f4;color:#5f6368;'}`;
-    status.textContent = (c.status || 'active').toUpperCase();
+    const status = document.createElement('button');
+    status.title = 'Delete Campaign';
+    status.style.cssText = 'background:transparent;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;align-self:flex-start;opacity:0.6;transition:opacity 150ms;';
+    status.onmouseover = () => status.style.opacity = '1';
+    status.onmouseout = () => status.style.opacity = '0.6';
+    status.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`;
+    status.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Hapus campaign "${c.name}"?`)) return;
+      await window.pywebview.api.delete_campaign(c.id);
+      refreshCampaignList();
+    });
     
     const topRow = document.createElement('div');
     topRow.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;';
