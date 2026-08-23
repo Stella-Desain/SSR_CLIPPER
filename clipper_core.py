@@ -2876,6 +2876,8 @@ Transcript:
             total_steps += 1
         if add_captions:
             total_steps += 1
+        if self.watermark_settings.get("enabled") or self.credit_watermark_settings.get("enabled"):
+            total_steps += 1
         
         # Helper to report sub-progress with percentage
         def clip_progress(step_name: str, step_num: int, sub_progress: float = 0):
@@ -3013,7 +3015,7 @@ Transcript:
             audio_source = str(base_audio_file) if add_hook else None
             
             # If watermark enabled, add captions to temp file first
-            if self.watermark_settings.get("enabled"):
+            if self.watermark_settings.get("enabled") or self.credit_watermark_settings.get("enabled"):
                 temp_captioned = clip_dir / "temp_captioned.mp4"
                 self.add_captions_api_with_progress(str(current_output), str(temp_captioned), audio_source, hook_duration,
                     lambda p: clip_progress("Adding captions...", current_step, p))
@@ -3035,10 +3037,34 @@ Transcript:
         else:
             self.log("  ⊘ Skipped captions (disabled)")
         
-        # Get total audio duration
-        probe_cmd = [self.ffmpeg_path, "-i", audio_file]
-        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
-        duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", probe_result.stderr)
+        # Apply watermark / credit watermark if enabled
+        if self.watermark_settings.get("enabled") or self.credit_watermark_settings.get("enabled"):
+            if self.is_cancelled():
+                return
+            clip_progress("Adding watermark...", current_step, 0)
+            wm_on = self.watermark_settings.get("enabled")
+            credit_on = self.credit_watermark_settings.get("enabled")
+            if wm_on and credit_on:
+                self.add_watermark_and_credit_with_progress(str(temp_captioned), str(final_file),
+                    lambda p: clip_progress("Adding watermark...", current_step, p))
+            elif wm_on:
+                self.add_watermark_with_progress(str(temp_captioned), str(final_file),
+                    lambda p: clip_progress("Adding watermark...", current_step, p))
+            else:
+                self.add_credit_watermark_with_progress(str(temp_captioned), str(final_file),
+                    lambda p: clip_progress("Adding watermark...", current_step, p))
+
+            if not final_file.exists():
+                raise Exception(f"Failed to create final video with watermark: {final_file}")
+
+            try:
+                if temp_captioned.exists():
+                    temp_captioned.unlink()
+            except Exception as e:
+                self.log(f"  Warning: Could not delete {temp_captioned.name}: {e}")
+
+            self.log("  ✓ Added watermark")
+            current_step += 1
         # Mark complete
         clip_progress("Done", total_steps, 0)
         
