@@ -815,6 +815,35 @@ Transcript:
         else:
             return self._download_video_subprocess(url)
     
+    def _get_format_selector(self) -> str:
+        """Build the yt-dlp format selector used by every video/section download.
+
+        YouTube can serve MULTIPLE audio tracks per video (the official
+        "Aloud" auto-dub feature) — e.g. original Indonesian + an
+        AI-generated English dub. Plain "bestaudio" has no language
+        awareness and can silently grab the dubbed (robotic) track instead
+        of the original, which is why clips have come out with English
+        dubbed audio + English captions even with Subtitle Language set to
+        Indonesian. Fix: prefer the audio track matching self.subtitle_language
+        first, then fall back to plain bestaudio (single-track videos are
+        unaffected).
+        """
+        base_video = "bestvideo[height>=720][height<=2160]"
+        lang = self.subtitle_language
+        if lang and lang != "none":
+            return (
+                f"{base_video}+bestaudio[language^={lang}]/"
+                f"{base_video}+bestaudio/"
+                f"best[height>=720][height<=2160]/"
+                f"bestvideo+bestaudio[language^={lang}]/"
+                f"bestvideo+bestaudio/best"
+            )
+        return (
+            f"{base_video}+bestaudio/"
+            f"best[height>=720][height<=2160]/"
+            f"bestvideo+bestaudio/best"
+        )
+    
     def _download_video_module(self, url: str) -> tuple:
         """Download video using yt-dlp Python module API"""
         self.log(f"  Using yt-dlp module v{yt_dlp.version.__version__}")
@@ -856,7 +885,7 @@ Transcript:
                 self.set_progress("Processing downloaded file...", 0.25)
         
         # High-quality format selector
-        format_selector = "bestvideo[height>=720][height<=2160]+bestaudio/best[height>=720][height<=2160]/bestvideo+bestaudio/best"
+        format_selector = self._get_format_selector()
         
         # Base yt-dlp options
         ydl_opts = {
@@ -1108,7 +1137,7 @@ Transcript:
         ]
         
         # High-quality format selector (prioritize 720p+ with fallback)
-        format_selector = "bestvideo[height>=720][height<=2160]+bestaudio/best[height>=720][height<=2160]/bestvideo+bestaudio/best"
+        format_selector = self._get_format_selector()
         
         last_error = None
         for strategy in download_strategies:
@@ -1850,7 +1879,7 @@ Transcript:
         yt_logger = YtDlpLogger(self.log)
         
         # Format selector
-        format_selector = "bestvideo[height>=720][height<=2160]+bestaudio/best[height>=720][height<=2160]/bestvideo+bestaudio/best"
+        format_selector = self._get_format_selector()
         
         ydl_opts = {
             'format': format_selector,
@@ -1967,7 +1996,7 @@ Transcript:
         # Build section string for yt-dlp
         section_str = f"*{start_time}-{end_time}"
         
-        format_selector = "bestvideo[height>=720][height<=2160]+bestaudio/best[height>=720][height<=2160]/bestvideo+bestaudio/best"
+        format_selector = self._get_format_selector()
         
         cmd = [
             self.ytdlp_path,
@@ -3045,23 +3074,23 @@ Transcript:
             wm_on = self.watermark_settings.get("enabled")
             credit_on = self.credit_watermark_settings.get("enabled")
             if wm_on and credit_on:
-                self.add_watermark_and_credit_with_progress(str(temp_captioned), str(final_file),
+                self.add_watermark_and_credit_with_progress(str(current_output), str(final_file),
                     lambda p: clip_progress("Adding watermark...", current_step, p))
             elif wm_on:
-                self.add_watermark_with_progress(str(temp_captioned), str(final_file),
+                self.add_watermark_with_progress(str(current_output), str(final_file),
                     lambda p: clip_progress("Adding watermark...", current_step, p))
             else:
-                self.add_credit_watermark_with_progress(str(temp_captioned), str(final_file),
+                self.add_credit_watermark_with_progress(str(current_output), str(final_file),
                     lambda p: clip_progress("Adding watermark...", current_step, p))
 
             if not final_file.exists():
                 raise Exception(f"Failed to create final video with watermark: {final_file}")
 
             try:
-                if temp_captioned.exists():
-                    temp_captioned.unlink()
+                if current_output.exists() and current_output != final_file:
+                    current_output.unlink()
             except Exception as e:
-                self.log(f"  Warning: Could not delete {temp_captioned.name}: {e}")
+                self.log(f"  Warning: Could not delete {current_output.name}: {e}")
 
             self.log("  ✓ Added watermark")
             current_step += 1
