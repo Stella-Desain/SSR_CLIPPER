@@ -758,6 +758,7 @@ Transcript:
                     portrait=portrait, campaign_id=campaign_id,
                     pre_cut=is_pre_cut,
                     completed_counter=(completed_count, completed_lock, total_clips),
+                    full_transcript=transcript,
                 )
                 self._update_clip_state(index, status="done", step="Done", step_progress=1.0)
             except Exception as e:
@@ -1579,6 +1580,39 @@ Transcript:
                 if clean_text:
                     lines.append(clean_text)
         
+        return " ".join(lines)
+    
+    def extract_transcript_for_highlight_from_text(self, transcript_text: str, highlight: dict) -> str:
+        """Sama seperti extract_transcript_for_highlight, tapi input-nya string transcript
+        yang sudah ada di memory (bukan path file .srt). Dipakai karena variable `transcript`
+        di process() adalah string, bukan file.
+
+        Args:
+            transcript_text: string transcript format SRT (hasil parse_srt() atau transcribe_full_video())
+            highlight: Dict dengan key start_time dan end_time
+
+        Returns:
+            str: Gabungan teks subtitle yang overlap dengan rentang waktu highlight
+        """
+        if not transcript_text:
+            return ""
+
+        pattern = r"(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n(.*?)(?=\n\n|\Z)"
+        matches = re.findall(pattern, transcript_text, re.DOTALL)
+
+        start_sec = self.parse_timestamp(highlight["start_time"])
+        end_sec = self.parse_timestamp(highlight["end_time"])
+
+        lines = []
+        for idx, start, end, text in matches:
+            sub_start = self.parse_timestamp(start)
+            sub_end = self.parse_timestamp(end)
+
+            if sub_end >= start_sec and sub_start <= end_sec:
+                clean_text = text.replace("\n", " ").strip()
+                if clean_text:
+                    lines.append(clean_text)
+
         return " ".join(lines)
     
     def download_subtitle_only(self, url: str) -> tuple:
@@ -2869,7 +2903,7 @@ Transcript:
         self.log(f"\n✅ {len(valid)} highlights found, sorted by virality score")
         return valid
     
-    def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False, portrait: bool = True, campaign_id: str = None, completed_counter: tuple = None):
+    def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False, portrait: bool = True, campaign_id: str = None, completed_counter: tuple = None, full_transcript: str = None):
         """Process a single clip: cut, portrait, hook (optional), captions (optional)
         
         Args:
@@ -3120,6 +3154,13 @@ Transcript:
                 self.log(f"  Warning: Could not delete temp_hooked.mp4: {e}")
         
         # Save metadata
+        clip_transcript = ""
+        if full_transcript:
+            try:
+                clip_transcript = self.extract_transcript_for_highlight_from_text(full_transcript, highlight)
+            except Exception as e:
+                self.log(f"  Warning: Gagal extract transcript untuk metadata: {e}")
+
         metadata = {
             "title": highlight["title"],
             "hook_text": highlight.get("hook_text", highlight["title"]),
@@ -3135,6 +3176,7 @@ Transcript:
             "virality_score": highlight.get("virality_score"),
             "description": highlight.get("description"),
             "conflict_group_id": highlight.get("conflict_group_id"),
+            "transcript": clip_transcript,
         }
         
         with open(clip_dir / "data.json", "w", encoding="utf-8") as f:
