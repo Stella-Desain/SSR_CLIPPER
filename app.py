@@ -1902,51 +1902,50 @@ class WebAPI:
                     "caption": caption
                 }
 
-                if platform == "repliz":
-                    entry["attempted_at"] = datetime.now().isoformat()
-                    if not access_key or not secret_key:
+                entry["attempted_at"] = datetime.now().isoformat()
+                if not access_key or not secret_key:
+                    entry["status"] = "gagal"
+                    entry["error_message"] = "Repliz keys not configured"
+                else:
+                    uploader = ReplizUploaderAdapter(access_key, secret_key)
+                    media_url = uploader.upload_video_to_storage(str(clip_path))
+                    if not media_url:
                         entry["status"] = "gagal"
-                        entry["error_message"] = "Repliz keys not configured"
+                        entry["error_message"] = "Gagal upload video ke Repliz Storage"
                     else:
-                        uploader = ReplizUploaderAdapter(access_key, secret_key)
-                        media_url = uploader.upload_video_to_storage(str(clip_path))
-                        if not media_url:
-                            entry["status"] = "gagal"
-                            entry["error_message"] = "Gagal upload video ke Repliz Storage"
-                        else:
-                            music = None
-                            if music_tracks:
-                                music = self._select_background_sound(
-                                    cdata.get("transcript", ""),
-                                    cdata.get("title", ""),
-                                    cdata.get("hook_text", ""),
-                                    music_tracks
-                                )
-                            if music:
-                                entry["music_attached"] = {
-                                    "id": music["id"], "name": music["name"], "artist": music["artist"]
-                                }
-
-                            try:
-                                sched_dt = datetime.fromisoformat(asn.get("scheduled_at"))
-                                schedule_at_iso = sched_dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
-                            except Exception:
-                                schedule_at_iso = datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000Z')
-
-                            success, result = uploader.create_schedule(
-                                account_id=asn.get("account_id"),
-                                title=cdata.get("title", ""),
-                                description=caption,
-                                media_url=media_url,
-                                schedule_at_iso=schedule_at_iso,
-                                music=music
+                        music = None
+                        if music_tracks:
+                            music = self._select_background_sound(
+                                cdata.get("transcript", ""),
+                                cdata.get("title", ""),
+                                cdata.get("hook_text", ""),
+                                music_tracks
                             )
-                            if success:
-                                entry["status"] = "sukses"
-                                entry["repliz_schedule_id"] = result
-                            else:
-                                entry["status"] = "gagal"
-                                entry["error_message"] = result
+                        if music:
+                            entry["music_attached"] = {
+                                "id": music["id"], "name": music["name"], "artist": music["artist"]
+                            }
+
+                        try:
+                            sched_dt = datetime.fromisoformat(asn.get("scheduled_at"))
+                            schedule_at_iso = sched_dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+                        except Exception:
+                            schedule_at_iso = datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000Z')
+
+                        success, result = uploader.create_schedule(
+                            account_id=asn.get("account_id"),
+                            title=cdata.get("title", ""),
+                            description=caption,
+                            media_url=media_url,
+                            schedule_at_iso=schedule_at_iso,
+                            music=music
+                        )
+                        if success:
+                            entry["status"] = "sukses"
+                            entry["repliz_schedule_id"] = result
+                        else:
+                            entry["status"] = "gagal"
+                            entry["error_message"] = result
 
                 if "scheduled_uploads" not in cdata:
                      cdata["scheduled_uploads"] = []
