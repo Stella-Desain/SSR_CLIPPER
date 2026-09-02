@@ -820,26 +820,16 @@ Transcript:
     def _get_format_selector(self) -> str:
         """Build the yt-dlp format selector used by every video/section download.
 
-        YouTube can serve MULTIPLE audio tracks per video (the official
-        "Aloud" auto-dub feature) — e.g. original Indonesian + an
-        AI-generated English dub. Plain "bestaudio" has no language
-        awareness and can silently grab the dubbed (robotic) track instead
-        of the original, which is why clips have come out with English
-        dubbed audio + English captions even with Subtitle Language set to
-        Indonesian. Fix: prefer the audio track matching self.subtitle_language
-        first, then fall back to plain bestaudio (single-track videos are
-        unaffected).
+        NOTE: this does NOT filter by any specific language. Avoiding
+        YouTube's auto-dubbed audio tracks is handled by format_sort
+        (see the 'lang' key placed first — yt-dlp's own YouTube extractor
+        already flags which track is the TRUE ORIGINAL via
+        'language_preference'/is_original, regardless of what language
+        that original happens to be). Guessing/forcing a specific
+        language code here would be wrong: original-language video must
+        stay in its original language, whatever that language is.
         """
         base_video = "bestvideo[height>=720][height<=2160]"
-        lang = self.subtitle_language
-        if lang and lang != "none":
-            return (
-                f"{base_video}+bestaudio[language^={lang}]/"
-                f"{base_video}+bestaudio/"
-                f"best[height>=720][height<=2160]/"
-                f"bestvideo+bestaudio[language^={lang}]/"
-                f"bestvideo+bestaudio/best"
-            )
         return (
             f"{base_video}+bestaudio/"
             f"best[height>=720][height<=2160]/"
@@ -892,7 +882,7 @@ Transcript:
         # Base yt-dlp options
         ydl_opts = {
             'format': format_selector,
-            'format_sort': ['res', 'br'],
+            'format_sort': ['lang', 'res', 'br'],
             'merge_output_format': 'mp4',
             'outtmpl': str(self.temp_dir / 'source.%(ext)s'),
             'progress_hooks': [progress_hook],
@@ -1151,7 +1141,7 @@ Transcript:
             cmd = [
                 self.ytdlp_path,
                 "-f", format_selector,
-                "--format-sort", "res,br",
+                "--format-sort", "lang,res,br",
                 *base_args,
                 *strategy["extra_args"],
             ]
@@ -1918,7 +1908,7 @@ Transcript:
         
         ydl_opts = {
             'format': format_selector,
-            'format_sort': ['res', 'br'],
+            'format_sort': ['lang', 'res', 'br'],
             'merge_output_format': 'mp4',
             'outtmpl': output_path,
             'progress_hooks': [progress_hook],
@@ -2036,7 +2026,7 @@ Transcript:
         cmd = [
             self.ytdlp_path,
             "-f", format_selector,
-            "--format-sort", "res,br",
+            "--format-sort", "lang,res,br",
             "--download-sections", section_str,
             "--force-keyframes-at-cuts",
             "--merge-output-format", "mp4",

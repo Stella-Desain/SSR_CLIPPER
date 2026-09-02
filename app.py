@@ -1350,7 +1350,7 @@ class WebAPI:
                             "path": str(mp4_path),
                             "upload_status": cdata.get("upload_status", "belum_diupload"),
                             "conflict_group_id": cdata.get("conflict_group_id"),
-                            "campaign_id": vdata.get("campaign_id")
+                            "campaign_id": cdata.get("campaign_id")
                         })
                     except Exception as e:
                         print(f"Error parsing {clip_json}: {e}")

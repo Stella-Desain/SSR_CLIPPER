@@ -1,6 +1,22 @@
 window.Components = window.Components || {};
 
 window.Components.StockClipView = function () {
+  function showToast(msg, isError = false) {
+    const toast = document.createElement('div');
+    toast.textContent = msg;
+    toast.style.cssText = `
+      position: fixed; bottom: 20px; right: 20px; 
+      background: ${isError ? '#ef4444' : '#10b981'}; 
+      color: white; padding: 12px 24px; border-radius: 8px; 
+      font-size: 14px; font-weight: 500; z-index: 9999;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      transition: opacity 0.3s;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 2800);
+  }
+
   const section = document.createElement('section');
   section.className = 'view entrance';
   section.dataset.view = 'stock-clip';
@@ -151,14 +167,15 @@ window.Components.StockClipView = function () {
           const res = await window.pywebview.api.quick_upload(idsToUpload);
           if (res && res.status === 'ok') {
               selectedClipIds.clear();
+              showToast(`${res.total_scheduled} clip berhasil dijadwalkan`);
               await refresh();
           } else {
-              alert('Gagal upload: ' + (res?.message || 'Unknown error'));
+              showToast('Gagal upload: ' + (res?.message || 'Unknown error'), true);
               distributeBtn.disabled = false;
               distributeBtn.textContent = originalText;
           }
       } catch (e) {
-          alert('Terjadi error saat upload');
+          showToast('Terjadi error saat upload', true);
           distributeBtn.disabled = false;
           distributeBtn.textContent = originalText;
       }
@@ -272,7 +289,16 @@ window.Components.StockClipView = function () {
       if (autoSelectUnuploaded) {
           const idsToUpload = clips.filter(c => c.upload_status === 'belum_diupload').map(c => c.id);
           if (idsToUpload.length > 0) {
-              await window.pywebview.api.quick_upload(idsToUpload);
+              try {
+                  const res = await window.pywebview.api.quick_upload(idsToUpload);
+                  if (res && res.status === 'ok') {
+                      showToast(`${res.total_scheduled} clip berhasil dijadwalkan`);
+                  } else {
+                      showToast('Gagal upload: ' + (res?.message || 'Unknown error'), true);
+                  }
+              } catch (e) {
+                  showToast('Terjadi error saat upload', true);
+              }
               await refresh();
               return;
           }
