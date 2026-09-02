@@ -613,7 +613,7 @@ KONTEN
 Transcript:
 {transcript}"""
     
-    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True, campaign_id: str = None, max_highlights: int = 30, fixed_count: int = None, min_score: int = 6, dur_min: int = 58, dur_max: int = 120):
+    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True, campaign_id: str = None, max_highlights: int = 30, fixed_count: int = None, min_score: int = 6, dur_min: int = 58, dur_max: int = 120, subtitle_style: str = "v2"):
         """Main processing pipeline"""
         
         # TODO: logic highlight_finder/yt_title_maker belum diimplementasi di core
@@ -759,6 +759,7 @@ Transcript:
                     pre_cut=is_pre_cut,
                     completed_counter=(completed_count, completed_lock, total_clips),
                     full_transcript=transcript,
+                    subtitle_style=subtitle_style
                 )
                 self._update_clip_state(index, status="done", step="Done", step_progress=1.0)
             except Exception as e:
@@ -2903,7 +2904,7 @@ Transcript:
         self.log(f"\n✅ {len(valid)} highlights found, sorted by virality score")
         return valid
     
-    def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False, portrait: bool = True, campaign_id: str = None, completed_counter: tuple = None, full_transcript: str = None):
+    def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False, portrait: bool = True, campaign_id: str = None, completed_counter: tuple = None, full_transcript: str = None, subtitle_style: str = "v2"):
         """Process a single clip: cut, portrait, hook (optional), captions (optional)
         
         Args:
@@ -3081,7 +3082,7 @@ Transcript:
             if self.watermark_settings.get("enabled") or self.credit_watermark_settings.get("enabled"):
                 temp_captioned = clip_dir / "temp_captioned.mp4"
                 self.add_captions_api_with_progress(str(current_output), str(temp_captioned), audio_source, hook_duration,
-                    lambda p: clip_progress("Adding captions...", current_step, p))
+                    lambda p: clip_progress("Adding captions...", current_step, p), subtitle_style=subtitle_style)
                 
                 if not temp_captioned.exists():
                     raise Exception(f"Failed to create captioned video: {temp_captioned}")
@@ -3090,7 +3091,7 @@ Transcript:
             else:
                 # No watermark, captions go directly to final
                 self.add_captions_api_with_progress(str(current_output), str(final_file), audio_source, hook_duration,
-                    lambda p: clip_progress("Adding captions...", current_step, p))
+                    lambda p: clip_progress("Adding captions...", current_step, p), subtitle_style=subtitle_style)
                 
                 if not final_file.exists():
                     raise Exception(f"Failed to create final video: {final_file}")
@@ -3618,6 +3619,192 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         for event in events:
             ass_content += f"Dialogue: 0,{event['start']},{event['end']},Default,,0,0,0,,{event['text']}\n"
         return ass_content
+    
+    def create_ass_subtitle_v2(self, transcript, output_path: str, time_offset: float = 0):
+        """Create ASS subtitle file - Subtitle V2: word-by-word highlight
+        dengan window durasi 'sampai kata berikutnya mulai' (lebih snappy,
+        tanpa gap) + animasi scale-pop di kata aktif. Base visual style
+        identik dengan V1 (CapCut style)."""
+
+        ass_content = """[Script Info]
+Title: Auto-generated captions (V2)
+ScriptType: v4.00+
+WrapStyle: 0
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial Black,65,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,2,50,50,400,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+        events = []
+
+        if hasattr(transcript, 'words') and transcript.words:
+            words = transcript.words
+            chunk_size = 4
+
+            for i in range(0, len(words), chunk_size):
+                chunk = words[i:i + chunk_size]
+                if not chunk:
+                    continue
+
+                for j, current_word in enumerate(chunk):
+                    word_start = current_word.start + time_offset
+                    if j < len(chunk) - 1:
+                        word_end = chunk[j + 1].start + time_offset
+                    else:
+                        word_end = current_word.end + time_offset
+
+                    if word_end <= word_start:
+                        continue
+
+                    text_parts = []
+                    for k, w in enumerate(chunk):
+                        word_text = w.word.strip().upper()
+                        if k == j:
+                            # PENTING: "\\t" di sini WAJIB double backslash persis
+                            # seperti ini (literal Python f-string), JANGAN
+                            # disederhanakan jadi "\t" — kalau cuma 1 backslash,
+                            # Python akan baca itu sebagai karakter TAB, bukan
+                            # tag ASS, dan subtitle akan rusak/tidak muncul.
+                            text_parts.append(
+                                f"{{\\c&H00FFFF&\\t(0,80,\\fscx122\\fscy122)\\t(80,160,\\fscx100\\fscy100)}}{word_text}{{\\c&HFFFFFF&}}"
+                            )
+                        else:
+                            text_parts.append(word_text)
+
+                    text = " ".join(text_parts)
+
+                    events.append({
+                        'start': self.format_time(word_start),
+                        'end': self.format_time(word_end),
+                        'text': text
+                    })
+
+        elif hasattr(transcript, 'segments') and transcript.segments:
+            for segment in transcript.segments:
+                start = segment.get('start', 0) + time_offset
+                end = segment.get('end', 0) + time_offset
+                text = segment.get('text', '').strip().upper()
+
+                if text:
+                    events.append({
+                        'start': self.format_time(start),
+                        'end': self.format_time(end),
+                        'text': text
+                    })
+
+        for event in events:
+            ass_content += f"Dialogue: 0,{event['start']},{event['end']},Default,,0,0,0,,{event['text']}\n"
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(ass_content)
+
+    # Daftar kata "power word" buat Subtitle V3 — kata di daftar ini dapat
+    # animasi pop LEBIH BESAR (140%) dibanding kata aktif biasa (122%).
+    # Silakan tambah/kurangi sesuai selera, tinggal edit set ini, tidak ada
+    # logic lain yang perlu diubah. Semua HARUS kapital (huruf besar semua).
+    POWER_WORDS_V3 = {
+        "GILA", "PARAH", "TERNYATA", "RAHASIA", "JANGAN", "HARUS", "WOW",
+        "SERIUS", "SUMPAH", "PENTING", "BAHAYA", "SEKARANG", "LANGSUNG",
+        "TERBUKTI", "FAKTA", "MUSTAHIL", "WAJIB", "DILARANG",
+        "NEVER", "ALWAYS", "SECRET", "STOP", "WARNING", "CRAZY", "INSANE",
+        "PROOF", "TRUTH", "NOBODY", "EVERYONE",
+    }
+
+    def create_ass_subtitle_v3(self, transcript, output_path: str, time_offset: float = 0):
+        """Create ASS subtitle file - Subtitle V3: sama persis seperti V2
+        (window durasi next-word-start + pop animation), TAPI kata yang
+        match POWER_WORDS_V3 dapat animasi pop lebih besar (140% vs 122%).
+        Tidak butuh AI call, tidak butuh font baru, tidak butuh manual
+        positioning."""
+
+        ass_content = """[Script Info]
+Title: Auto-generated captions (V3)
+ScriptType: v4.00+
+WrapStyle: 0
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial Black,65,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,2,50,50,400,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+        events = []
+
+        if hasattr(transcript, 'words') and transcript.words:
+            words = transcript.words
+            chunk_size = 4
+
+            for i in range(0, len(words), chunk_size):
+                chunk = words[i:i + chunk_size]
+                if not chunk:
+                    continue
+
+                for j, current_word in enumerate(chunk):
+                    word_start = current_word.start + time_offset
+                    if j < len(chunk) - 1:
+                        word_end = chunk[j + 1].start + time_offset
+                    else:
+                        word_end = current_word.end + time_offset
+
+                    if word_end <= word_start:
+                        continue
+
+                    text_parts = []
+                    for k, w in enumerate(chunk):
+                        word_text = w.word.strip().upper()
+                        if k == j:
+                            word_clean = word_text.strip('.,!?"\':;()')
+                            if word_clean in self.POWER_WORDS_V3:
+                                scale_peak = 140
+                            else:
+                                scale_peak = 122
+                            # PENTING: "\\t" WAJIB double backslash persis
+                            # seperti ini (literal Python f-string) — sama
+                            # aturan kayak di create_ass_subtitle_v2().
+                            text_parts.append(
+                                f"{{\\c&H00FFFF&\\t(0,80,\\fscx{scale_peak}\\fscy{scale_peak})\\t(80,160,\\fscx100\\fscy100)}}{word_text}{{\\c&HFFFFFF&}}"
+                            )
+                        else:
+                            text_parts.append(word_text)
+
+                    text = " ".join(text_parts)
+
+                    events.append({
+                        'start': self.format_time(word_start),
+                        'end': self.format_time(word_end),
+                        'text': text
+                    })
+
+        elif hasattr(transcript, 'segments') and transcript.segments:
+            for segment in transcript.segments:
+                start = segment.get('start', 0) + time_offset
+                end = segment.get('end', 0) + time_offset
+                text = segment.get('text', '').strip().upper()
+
+                if text:
+                    events.append({
+                        'start': self.format_time(start),
+                        'end': self.format_time(end),
+                        'text': text
+                    })
+
+        for event in events:
+            ass_content += f"Dialogue: 0,{event['start']},{event['end']},Default,,0,0,0,,{event['text']}\n"
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(ass_content)
     
     def format_time(self, seconds: float) -> str:
         """Convert seconds to ASS time format"""
@@ -4273,7 +4460,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         
         if duration_match:
             h, m, s = duration_match.groups()
-            hook_duration = int(h) * 3600 + int(m) * 60 + float(s) + 0.5
+            # No artificial padding — use exact TTS duration so time_offset
+            # for subtitle alignment matches the actual hook length in the
+            # concatenated output (the old +0.5 caused ~0.5 s subtitle desync).
+            hook_duration = int(h) * 3600 + int(m) * 60 + float(s)
         else:
             hook_duration = 3.0
         
@@ -4536,6 +4726,32 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         self.run_ffmpeg_with_progress(cmd, hook_duration + main_duration,
             lambda p: progress_callback(0.6 + p * 0.4))
         
+        # Probe actual total duration of the concatenated output, then subtract
+        # main_duration to get the precise hook portion length.  This is used
+        # as time_offset for subtitle alignment — even tiny encoding rounding
+        # errors in hook_duration would cause visible subtitle desync over a
+        # long clip, so we measure the ground truth instead of trusting the
+        # TTS probe estimate.
+        actual_hook_duration = hook_duration  # fallback
+        try:
+            probe_out = subprocess.run(
+                [self.ffmpeg_path, "-i", output_path],
+                capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS
+            )
+            total_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", probe_out.stderr)
+            if total_match:
+                th, tm, ts = total_match.groups()
+                total_duration = int(th) * 3600 + int(tm) * 60 + float(ts)
+                measured = total_duration - main_duration
+                # Sanity-clamp: must be positive and within ±1 s of our estimate
+                if 0.1 <= measured <= hook_duration + 1.5:
+                    actual_hook_duration = measured
+                    self.log(f"  ✓ Hook duration measured: {actual_hook_duration:.3f}s (estimate was {hook_duration:.3f}s)")
+                else:
+                    self.log(f"  ⚠ Hook duration measurement out of range ({measured:.3f}s), using estimate {hook_duration:.3f}s")
+        except Exception as e:
+            self.log(f"  ⚠ Could not probe hook output duration: {e}, using estimate")
+        
         # Cleanup
         for path in (tts_file, hook_video, bg_video, overlay_video, overlay_png):
             try:
@@ -4544,9 +4760,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             except Exception:
                 pass
         
-        return hook_duration
+        return actual_hook_duration
     
-    def add_captions_api_with_progress(self, input_path: str, output_path: str, audio_source: str = None, time_offset: float = 0, progress_callback=None):
+    def add_captions_api_with_progress(self, input_path: str, output_path: str, audio_source: str = None, time_offset: float = 0, progress_callback=None, subtitle_style: str = "v2"):
         """Add CapCut-style captions using OpenAI Whisper API with progress"""
         
         if progress_callback:
@@ -4627,7 +4843,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         
         # Create ASS subtitle file
         ass_file = tempfile.NamedTemporaryFile(mode='w', suffix='.ass', delete=False, encoding='utf-8').name
-        self.create_ass_subtitle_capcut(transcript, ass_file, time_offset)
+        if subtitle_style == "v1":
+            self.create_ass_subtitle_capcut(transcript, ass_file, time_offset)
+        elif subtitle_style == "v3":
+            self.create_ass_subtitle_v3(transcript, ass_file, time_offset)
+        else:
+            self.create_ass_subtitle_v2(transcript, ass_file, time_offset)
         
         if progress_callback:
             progress_callback(0.6)

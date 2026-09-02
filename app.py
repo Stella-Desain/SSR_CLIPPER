@@ -373,7 +373,7 @@ class WebAPI:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False, highlight_finder=True, yt_title_maker=True, campaign_id=None, subtitle_style="capcut", clip_mode="fixed"):
+    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False, highlight_finder=True, yt_title_maker=True, campaign_id=None, subtitle_style="v2", clip_mode="fixed"):
         if self.thread and self.thread.is_alive():
             return {"status": "busy"}
         
@@ -401,7 +401,7 @@ class WebAPI:
         self.thread.start()
         return {"status": "started"}
 
-    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang, portrait, highlight_finder, yt_title_maker, campaign_id=None, subtitle_style="capcut", max_highlights=30, fixed_count=None, min_score=None):
+    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang, portrait, highlight_finder, yt_title_maker, campaign_id=None, subtitle_style="v2", max_highlights=30, fixed_count=None, min_score=None):
         def log_cb(msg):
             self.status = str(msg)
             if self.current_job:

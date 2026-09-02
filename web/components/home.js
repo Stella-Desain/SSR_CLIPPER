@@ -143,11 +143,9 @@ window.Components.HomeView = function () {
   subtitleStyleSelect.id = 'subtitle-style';
   subtitleStyleSelect.style.cssText = 'width:auto;min-width:140px;height:32px;font-size:12px;';
   subtitleStyleSelect.innerHTML = `
-    <option value="capcut" selected>CapCut (Default)</option>
-    <option value="minimal">Minimal</option>
-    <option value="bold_shadow">Bold Drop Shadow</option>
-    <option value="hormozi">Hormozi Style</option>
-    <option value="split_color">Split Color</option>
+    <option value="v2" selected>Subtitle V2 (Dynamic Word Pop)</option>
+    <option value="v3">Subtitle V3 (Kinetic Emphasis)</option>
+    <option value="v1">Subtitle V1 (Classic)</option>
   `;
 
   subtitleStyleItem.appendChild(styleLeft);

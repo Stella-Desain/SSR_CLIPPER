@@ -142,6 +142,7 @@ function lockControls(state) {
   homeView.fields.url.disabled = state;
   homeView.fields.clips.disabled = state;
   homeView.fields.subtitle.disabled = state;
+  if (homeView.fields.subtitleStyle) homeView.fields.subtitleStyle.disabled = state;
   homeView.fields.highlight.disabled = state;
   homeView.fields.captions.disabled = state;
   homeView.fields.hook.disabled = state;
@@ -284,7 +285,7 @@ async function start() {
       homeView.fields.highlight.checked,
       homeView.fields.ytTitle.checked,
       homeView.fields.campaign ? homeView.fields.campaign.value : "",
-      homeView.fields.subtitleStyle ? homeView.fields.subtitleStyle.value : "capcut",
+      homeView.fields.subtitleStyle ? homeView.fields.subtitleStyle.value : "v2",
       homeView.fields.clipMode ? homeView.fields.clipMode() : "fixed"
     );
     if (res && res.status === 'started') {
