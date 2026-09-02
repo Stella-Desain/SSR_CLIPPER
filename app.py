@@ -62,8 +62,10 @@ class ReplizUploaderAdapter:
         Init File -> PUT ke presigned URL -> Complete File.
 
         Returns:
-            str: public URL file (dari field 'url' response Init), kalau sukses
-            None: kalau gagal di step manapun
+            (True, public_url)      kalau sukses
+            (False, error_message)  kalau gagal di step manapun — error_message berisi
+                                     alasan SPESIFIK (HTTP code + pesan dari Repliz kalau ada),
+                                     bukan pesan generik.
         """
         import requests
         from requests.auth import HTTPBasicAuth
@@ -82,13 +84,17 @@ class ReplizUploaderAdapter:
                 timeout=30
             )
             if init_res.status_code != 200:
-                return None
+                try:
+                    msg = init_res.json().get("message", f"HTTP {init_res.status_code}")
+                except Exception:
+                    msg = f"HTTP {init_res.status_code}"
+                return False, f"Init File gagal: {msg}"
             init_data = init_res.json()
             file_id = init_data.get("id")
             upload_url = init_data.get("upload")
             public_url = init_data.get("url")
             if not file_id or not upload_url or not public_url:
-                return None
+                return False, "Init File gagal: response tidak lengkap (id/upload/url kosong)"
 
             # Step 2: PUT raw binary ke presigned URL
             with open(file_path, "rb") as f:
@@ -99,20 +105,28 @@ class ReplizUploaderAdapter:
                     timeout=300
                 )
             if put_res.status_code not in (200, 201, 204):
-                return None
+                return False, f"Upload ke presigned URL gagal: HTTP {put_res.status_code}"
 
             # Step 3: Complete File
+            # PENTING: endpoint ini balikin HTTP 204 No Content kalau SUKSES (BUKAN 200!).
+            # Sumber: https://docs.repliz.com/api/storage/complete-file.html
+            # Bug lama di sini cuma nerima 200, padahal API selalu balikin 204,
+            # jadi upload SELALU dianggap gagal walau sebenarnya sudah sukses.
             complete_res = requests.post(
                 f"https://api.repliz.com/public/storage/file/{file_id}/complete",
                 auth=auth,
                 timeout=30
             )
-            if complete_res.status_code != 200:
-                return None
+            if complete_res.status_code not in (200, 204):
+                try:
+                    msg = complete_res.json().get("message", f"HTTP {complete_res.status_code}")
+                except Exception:
+                    msg = f"HTTP {complete_res.status_code}"
+                return False, f"Complete File gagal: {msg}"
 
-            return public_url
-        except Exception:
-            return None
+            return True, public_url
+        except Exception as e:
+            return False, f"Exception saat upload ke storage: {str(e)}"
 
     def create_schedule(self, account_id, title, description, media_url, schedule_at_iso, music=None):
         """Buat scheduled post video lewat POST /public/schedule.
@@ -1610,16 +1624,23 @@ class WebAPI:
             try:
                 title = kwargs.get("title", Path(clip_path).stem)
                 desc = kwargs.get("description", "")
-                
-                vid_url = uploader.upload_video_to_storage(clip_path)
-                if not vid_url:
-                     return {"status": "error", "message": "Failed to upload video to storage"}
-                     
-                success, msg = uploader.upload_to_repliz(account_id, title, desc, vid_url)
-                if success:
-                     return {"status": "success", "message": msg}
+
+                storage_ok, storage_result = uploader.upload_video_to_storage(clip_path)
+                if not storage_ok:
+                     return {"status": "error", "message": storage_result}
+                vid_url = storage_result
+
+                schedule_ok, schedule_result = uploader.create_schedule(
+                    account_id=account_id,
+                    title=title,
+                    description=desc,
+                    media_url=vid_url,
+                    schedule_at_iso=datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000Z')
+                )
+                if schedule_ok:
+                     return {"status": "success", "message": f"Scheduled, id={schedule_result}"}
                 else:
-                     return {"status": "error", "message": msg}
+                     return {"status": "error", "message": schedule_result}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
                 
@@ -1908,11 +1929,12 @@ class WebAPI:
                     entry["error_message"] = "Repliz keys not configured"
                 else:
                     uploader = ReplizUploaderAdapter(access_key, secret_key)
-                    media_url = uploader.upload_video_to_storage(str(clip_path))
-                    if not media_url:
+                    storage_ok, storage_result = uploader.upload_video_to_storage(str(clip_path))
+                    if not storage_ok:
                         entry["status"] = "gagal"
-                        entry["error_message"] = "Gagal upload video ke Repliz Storage"
+                        entry["error_message"] = storage_result
                     else:
+                        media_url = storage_result
                         music = None
                         if music_tracks:
                             music = self._select_background_sound(
@@ -2033,7 +2055,13 @@ def _upload_scheduler(api):
                 needs_save = False
                 
                 for entry in scheduled_uploads:
-                    if entry.get("status") == "terjadwal" and entry.get("platform") != "repliz":
+                    # Semua entry sekarang dibuat & langsung diselesaikan (sukses/gagal) oleh
+                    # confirm_distribution() lewat Repliz — gak pernah ada lagi entry yang perlu
+                    # diproses ulang di sini. Kondisi lama `entry.get("platform") != "repliz"`
+                    # SELALU True (field platform isinya "tiktok"/dst, bukan literal "repliz"),
+                    # jadi blok ini salah-rute entry lama ke uploader native yang gak dikonfigurasi.
+                    # Sengaja dinonaktifkan total (bukan dihapus) sebagai jaring pengaman.
+                    if False:
                         sched_dt = entry.get("scheduled_at")
                         if sched_dt:
                             dt = datetime.fromisoformat(sched_dt)
