@@ -83,7 +83,12 @@ class ReplizUploaderAdapter:
                 auth=auth,
                 timeout=30
             )
-            if init_res.status_code != 200:
+            # PENTING: terima SEMUA kode 2xx sebagai sukses, JANGAN cuma 1 kode spesifik.
+            # Dokumentasi Repliz nunjukin contoh "200", tapi di real-world endpoint ini
+            # kadang balikin 201 Created (karena secara REST dia memang MEMBUAT resource
+            # baru, sebuah upload session). Kalau cuma nerima 200 doang, request yang
+            # sebenarnya SUKSES (201) bakal salah dianggap gagal.
+            if not (200 <= init_res.status_code < 300):
                 try:
                     msg = init_res.json().get("message", f"HTTP {init_res.status_code}")
                 except Exception:
@@ -104,20 +109,21 @@ class ReplizUploaderAdapter:
                     headers={"Content-Type": mimetype},
                     timeout=300
                 )
-            if put_res.status_code not in (200, 201, 204):
+            # Sama, terima semua 2xx (bukan cuma daftar kode tebakan 200/201/204).
+            if not (200 <= put_res.status_code < 300):
                 return False, f"Upload ke presigned URL gagal: HTTP {put_res.status_code}"
 
             # Step 3: Complete File
-            # PENTING: endpoint ini balikin HTTP 204 No Content kalau SUKSES (BUKAN 200!).
-            # Sumber: https://docs.repliz.com/api/storage/complete-file.html
-            # Bug lama di sini cuma nerima 200, padahal API selalu balikin 204,
-            # jadi upload SELALU dianggap gagal walau sebenarnya sudah sukses.
+            # Endpoint ini per dokumentasi resmi balikin 204 No Content kalau sukses
+            # (https://docs.repliz.com/api/storage/complete-file.html). Tapi supaya gak
+            # kena masalah "kode beda dari dokumentasi" lagi kayak Step 1 barusan, kita
+            # gak nebak kode pastinya satu-satu lagi — semua 2xx dianggap sukses.
             complete_res = requests.post(
                 f"https://api.repliz.com/public/storage/file/{file_id}/complete",
                 auth=auth,
                 timeout=30
             )
-            if complete_res.status_code not in (200, 204):
+            if not (200 <= complete_res.status_code < 300):
                 try:
                     msg = complete_res.json().get("message", f"HTTP {complete_res.status_code}")
                 except Exception:
