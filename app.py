@@ -719,6 +719,89 @@ class WebAPI:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    def get_jamendo_tracks(self, tags="", speed="", target_duration=30):
+        """Cari track musik instrumental dari Jamendo yang aman dipakai komersial:
+        sudah difilter instrumental-only, lisensi bukan Non-Commercial, dan boleh
+        di-download. Filter durasi dilakukan di sisi kita sendiri (bukan parameter
+        API) biar dijamin benar, lalu diurutkan dari yang durasinya paling deket ke
+        target_duration.
+
+        Args:
+            tags: string tag mood/genre bahasa Inggris, dipisah spasi, contoh
+                "happy upbeat" (dikirim sebagai parameter fuzzytags ke Jamendo)
+            speed: salah satu dari "verylow","low","medium","high","veryhigh", atau
+                "" buat skip filter tempo
+            target_duration: perkiraan durasi clip (detik) — track yang lebih
+                PENDEK dari ini otomatis dibuang (gak cukup buat di-trim jadi window
+                sepanjang durasi clip)
+
+        Returns:
+            {"status": "ok", "tracks": [ {id, name, artist, duration, license_ccurl,
+                audiodownload, waveform}, ... ]} — sudah terurut, kandidat terbaik di depan
+            atau
+            {"status": "error", "message": "..."}
+        """
+        try:
+            cfg = self._get_cfg()
+            jamendo_cfg = cfg.get("jamendo", {})
+            client_id = jamendo_cfg.get("client_id")
+
+            if not client_id:
+                return {"status": "error", "message": "Jamendo client_id belum diisi di Settings"}
+
+            import requests
+            url = "https://api.jamendo.com/v3.0/tracks/"
+            target_duration = int(target_duration) if target_duration else 30
+            params = {
+                "client_id": client_id,
+                "format": "json",
+                "limit": 30,
+                "vocalinstrumental": "instrumental",
+                "include": "musicinfo",
+                "audioformat": "mp32",
+                "audiodlformat": "mp32"
+            }
+            if tags:
+                params["fuzzytags"] = tags
+            if speed:
+                params["speed"] = speed
+
+            response = requests.get(url, params=params, timeout=15)
+
+            if response.status_code != 200:
+                return {"status": "error", "message": f"HTTP {response.status_code}"}
+
+            data = response.json()
+            results = data.get("results", [])
+
+            tracks = []
+            for t in results:
+                if not t.get("audiodownload_allowed"):
+                    continue
+                license_url = t.get("license_ccurl") or ""
+                license_segments = license_url.rstrip("/").split("/")
+                license_code = license_segments[-2].lower() if len(license_segments) >= 2 else ""
+                if "nc" in license_code.split("-"):
+                    continue
+                duration = t.get("duration") or 0
+                if duration and duration < target_duration:
+                    continue
+                tracks.append({
+                    "id": t.get("id"),
+                    "name": t.get("name"),
+                    "artist": t.get("artist_name"),
+                    "duration": duration,
+                    "license_ccurl": t.get("license_ccurl"),
+                    "audiodownload": t.get("audiodownload"),
+                    "waveform": t.get("waveform")
+                })
+
+            tracks.sort(key=lambda x: (x["duration"] or 0) - target_duration)
+
+            return {"status": "ok", "tracks": tracks}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     def get_campaigns(self):
         cfg = self._get_cfg()
         campaigns = cfg.get("campaigns", [])
@@ -1808,20 +1891,24 @@ class WebAPI:
             "overflow_note": overflow_note
         }
 
-    def _select_background_sound(self, transcript, title, hook_text, tracks):
-        """AI pilih 1 track trending paling cocok buat 1 clip, berdasarkan isi clip.
+    def _select_background_sound(self, transcript, title, hook_text, clip_duration):
+        """AI tentuin mood/tempo/volume musik yang cocok buat 1 clip ('feeling editor'),
+        cari track instrumental berlisensi aman dari Jamendo sesuai kriteria itu, lalu
+        hitung titik potong (start-end detik) paling energic dari waveform track yang
+        kepilih.
 
         Args:
             transcript: potongan transcript clip (dari data.json, field "transcript")
             title: judul clip
             hook_text: hook clip
-            tracks: list track dari get_repliz_tiktok_music() -> tracks
+            clip_duration: durasi clip dalam detik (dari data.json, field "duration_seconds")
 
         Returns:
-            dict {"id","artist","name","thumbnail"} kalau AI berhasil pilih 1 track valid
-            None kalau gagal / tidak ada track cocok / API key belum diset
+            dict {"id","name","artist","license_ccurl","audiodownload","start","end","volume"}
+            kalau berhasil, None kalau gagal / gak ada track cocok / API key belum diset /
+            clip_duration gak valid
         """
-        if not tracks:
+        if not clip_duration or clip_duration <= 0:
             return None
         try:
             cfg = self._get_cfg()
@@ -1832,28 +1919,28 @@ class WebAPI:
             if not api_key:
                 return None
 
-            track_list_text = "\n".join(
-                f'- id="{t["id"]}" | "{t.get("name","")}" by {t.get("artist","")}'
-                for t in tracks[:20] if t.get("id")
-            )
-            if not track_list_text:
-                return None
-
             from openai import OpenAI
             client = OpenAI(api_key=api_key, base_url=base_url)
             messages = [
                 {"role": "system", "content": (
-                    'Kamu memilih 1 lagu trending TikTok yang paling cocok jadi backsound '
-                    'untuk sebuah clip video, berdasarkan isi/mood clip tersebut. '
-                    'HANYA balas JSON persis format ini, tanpa teks lain: {"id": "..."}\n'
-                    'id HARUS persis salah satu id dari daftar yang diberikan. '
-                    'Kalau tidak ada yang cocok sama sekali, balas {"id": ""}.'
+                    'Kamu editor audio yang nentuin mood musik latar buat sebuah clip '
+                    'video pendek, berdasarkan isi/mood clip tersebut. '
+                    'HANYA balas JSON persis format ini, tanpa teks lain: '
+                    '{"tags": "kata1 kata2", "speed": "low", "volume": 0.15}\n'
+                    '"tags" adalah 1-3 kata bahasa Inggris buat mood/genre musik '
+                    'instrumental (contoh: "happy upbeat", "sad emotional", "epic '
+                    'cinematic"). '
+                    '"speed" HARUS salah satu dari: "verylow","low","medium","high",'
+                    '"veryhigh". '
+                    '"volume" adalah level volume musik relatif ke suara asli clip, '
+                    'angka antara 0.05 dan 0.4 (makin banyak dialog/narasi di '
+                    'transcript, makin kecil volumenya, biar suara asli tetap jelas '
+                    'kedengeran).'
                 )},
                 {"role": "user", "content": (
                     f"Judul clip: {title}\n"
                     f"Hook: {hook_text}\n"
-                    f"Transcript clip: {(transcript or '')[:1500]}\n\n"
-                    f"Daftar lagu trending:\n{track_list_text}"
+                    f"Transcript clip: {(transcript or '')[:1500]}"
                 )}
             ]
             response = client.chat.completions.create(model=model, messages=messages, temperature=0.3)
@@ -1862,22 +1949,163 @@ class WebAPI:
                 raw = raw[7:]
             if raw.endswith("```"):
                 raw = raw[:-3]
-            picked = json.loads(raw.strip())
-            picked_id = picked.get("id")
-            if not picked_id:
+            decision = json.loads(raw.strip())
+            tags = decision.get("tags", "")
+            speed = decision.get("speed", "")
+            try:
+                volume = max(0.05, min(0.4, float(decision.get("volume", 0.15))))
+            except Exception:
+                volume = 0.15
+
+            jamendo_res = self.get_jamendo_tracks(tags=tags, speed=speed, target_duration=clip_duration)
+            if jamendo_res.get("status") != "ok":
                 return None
-            for t in tracks:
-                if t.get("id") == picked_id:
-                    return {"id": t["id"], "artist": t.get("artist", ""), "name": t.get("name", ""), "thumbnail": t.get("thumbnail", "")}
-            return None
+            candidates = jamendo_res.get("tracks", [])
+            if not candidates:
+                return None
+
+            track = candidates[0]
+            if not track.get("audiodownload"):
+                return None
+            track_duration = track.get("duration") or clip_duration
+            start, end = self._find_best_music_window(track.get("waveform"), clip_duration, track_duration)
+
+            return {
+                "id": track.get("id"),
+                "name": track.get("name"),
+                "artist": track.get("artist"),
+                "license_ccurl": track.get("license_ccurl"),
+                "audiodownload": track.get("audiodownload"),
+                "start": start,
+                "end": end,
+                "volume": volume
+            }
         except Exception:
             return None
 
+    def _find_best_music_window(self, waveform_raw, target_duration, track_duration):
+        """Cari window sepanjang target_duration detik dengan energi tertinggi dari
+        data waveform Jamendo (field 'peaks'), buat jadi titik potong (start,end) musik
+        yang paling 'nendang' dipakai sebagai backsound — tanpa perlu download & analisis
+        audio manual, karena Jamendo udah kasih peaks-nya langsung di response API.
+
+        Args:
+            waveform_raw: isi field "waveform" dari Jamendo (JSON string berisi
+                {"peaks":[...]})
+            target_duration: durasi clip (detik)
+            track_duration: durasi total track musik (detik)
+
+        Returns:
+            (start_seconds, end_seconds) — float, sudah clamp ke batas durasi track.
+            Fallback (0.0, target_duration) kalau data waveform gak ada / gagal diparse.
+        """
+        try:
+            target_duration = max(1.0, float(target_duration))
+            track_duration = max(target_duration, float(track_duration or target_duration))
+            if target_duration >= track_duration:
+                return 0.0, track_duration
+
+            waveform = json.loads(waveform_raw) if isinstance(waveform_raw, str) else (waveform_raw or {})
+            peaks = waveform.get("peaks", [])
+            if not peaks:
+                return 0.0, target_duration
+
+            sec_per_peak = track_duration / len(peaks)
+            window_size = max(1, int(target_duration / sec_per_peak))
+            if window_size >= len(peaks):
+                return 0.0, track_duration
+
+            window_sum = sum(peaks[:window_size])
+            best_sum = window_sum
+            best_start_idx = 0
+            for i in range(1, len(peaks) - window_size + 1):
+                window_sum += peaks[i + window_size - 1] - peaks[i - 1]
+                if window_sum > best_sum:
+                    best_sum = window_sum
+                    best_start_idx = i
+
+            start = round(best_start_idx * sec_per_peak, 2)
+            end = round(start + target_duration, 2)
+            if end > track_duration:
+                end = track_duration
+                start = max(0.0, end - target_duration)
+            return start, end
+        except Exception:
+            return 0.0, min(target_duration, track_duration)
+
+    def _mix_music_into_video(self, video_path, music_info, clip_duration):
+        """Download track musik terpilih dari Jamendo, trim ke window yang sudah
+        dihitung _find_best_music_window(), lalu mix ke video pakai ffmpeg dengan
+        auto-ducking (sidechaincompress) — musik otomatis pelan pas ada dialog di clip
+        dan naik lagi pas jeda, plus fade in/out biar transisinya halus. Audio ASLI
+        clip TETAP ADA (bukan digantikan) — cuma di-mix bareng musiknya.
+
+        Args:
+            video_path: path clip asli (Path atau str) — file ini TIDAK diubah
+            music_info: dict hasil _select_background_sound() (butuh key
+                audiodownload/start/end/volume)
+            clip_duration: durasi clip (detik), dipakai buat hitung titik fade-out
+
+        Returns:
+            (output_path, tmp_dir) kalau berhasil — output_path (Path) adalah video
+                baru hasil mixing, tmp_dir (Path) adalah folder temp yang HARUS
+                dihapus caller pakai shutil.rmtree() setelah selesai dipakai (upload).
+            (None, tmp_dir_or_None) kalau gagal di step manapun — tmp_dir tetap
+                dibalikin (bisa None) supaya caller tetap bisa cleanup kalau folder
+                sempat kebuat.
+        """
+        import tempfile
+        try:
+            tmp_dir = Path(tempfile.mkdtemp(prefix="ssrclip_music_"))
+        except Exception:
+            return None, None
+
+        try:
+            music_local = tmp_dir / "music_src.mp3"
+            resp = requests.get(music_info["audiodownload"], timeout=60, stream=True)
+            if resp.status_code != 200:
+                return None, tmp_dir
+            with open(music_local, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=65536):
+                    if chunk:
+                        f.write(chunk)
+
+            output_path = tmp_dir / f"mixed_{Path(video_path).name}"
+            ffmpeg_path = get_ffmpeg_path()
+            fade_out_start = max(0.0, float(clip_duration) - 1.0)
+            filter_complex = (
+                "[0:a]asplit=2[voice_main][voice_sc];"
+                f"[1:a]volume={music_info['volume']},afade=t=in:st=0:d=1,"
+                f"afade=t=out:st={fade_out_start}:d=1[music_pre];"
+                "[music_pre][voice_sc]sidechaincompress=threshold=0.02:ratio=8:"
+                "attack=50:release=400[music_ducked];"
+                "[voice_main][music_ducked]amix=inputs=2:duration=first:"
+                "dropout_transition=0[aout]"
+            )
+            cmd = [
+                ffmpeg_path, "-y",
+                "-i", str(video_path),
+                "-ss", str(music_info["start"]), "-to", str(music_info["end"]),
+                "-i", str(music_local),
+                "-filter_complex", filter_complex,
+                "-map", "0:v", "-map", "[aout]",
+                "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                str(output_path)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            if result.returncode != 0 or not output_path.exists():
+                return None, tmp_dir
+            return output_path, tmp_dir
+        except Exception:
+            return None, tmp_dir
+
     def confirm_distribution(self, assignments):
-        """Menerima hasil preview: upload video ke Repliz Storage, pilih background
-        sound pakai AI, lalu buat scheduled post lewat Repliz Schedule API.
-        Update data.json dengan hasil akhirnya (sukses/gagal), bukan cuma status lokal."""
+        """Menerima hasil preview: pilih & mix background sound dari Jamendo ke video
+        (lokal, pakai ffmpeg, audio asli TETAP ADA), upload video hasil mixing ke
+        Repliz Storage, lalu buat scheduled post lewat Repliz Schedule API. Update
+        data.json dengan hasil akhirnya (sukses/gagal), bukan cuma status lokal."""
         import uuid
+        import shutil
         from datetime import datetime
 
         updated_clips = 0
@@ -1885,13 +2113,6 @@ class WebAPI:
         repliz_cfg = cfg.get("repliz", {})
         access_key = repliz_cfg.get("access_key")
         secret_key = repliz_cfg.get("secret_key")
-
-        # Ambil daftar musik trending SEKALI untuk semua clip di batch upload ini
-        music_tracks = []
-        if access_key and secret_key:
-            music_res = self.get_repliz_tiktok_music()
-            if music_res.get("status") == "ok":
-                music_tracks = music_res.get("tracks", [])
 
         try:
             all_clips = self.get_stock_clips()
@@ -1935,24 +2156,46 @@ class WebAPI:
                     entry["error_message"] = "Repliz keys not configured"
                 else:
                     uploader = ReplizUploaderAdapter(access_key, secret_key)
-                    storage_ok, storage_result = uploader.upload_video_to_storage(str(clip_path))
+
+                    # Pilih musik dari Jamendo + mix lokal ke video pakai ffmpeg SEBELUM
+                    # upload, biar audio asli clip + musik nyatu jadi satu file. Kalau
+                    # gagal di step manapun (gak ada API key, gak ada track cocok, ffmpeg
+                    # error, dst), fallback upload clip ASLI tanpa musik — upload tetap
+                    # jalan, cuma tanpa backsound.
+                    upload_source = clip_path
+                    tmp_dir = None
+                    clip_duration = cdata.get("duration_seconds", 0)
+                    music = self._select_background_sound(
+                        cdata.get("transcript", ""),
+                        cdata.get("title", ""),
+                        cdata.get("hook_text", ""),
+                        clip_duration
+                    )
+                    if music:
+                        mixed_path, tmp_dir = self._mix_music_into_video(clip_path, music, clip_duration)
+                        if mixed_path:
+                            upload_source = mixed_path
+                            entry["music_attached"] = {
+                                "id": music["id"], "name": music["name"], "artist": music["artist"],
+                                "license_ccurl": music["license_ccurl"]
+                            }
+                            if music.get("name") and music.get("artist"):
+                                attribution = f"\ud83c\udfb5 {music['name']} by {music['artist']} (Jamendo)"
+                                caption = f"{caption}\n\n{attribution}" if caption else attribution
+                                entry["caption"] = caption
+                        else:
+                            music = None
+
+                    storage_ok, storage_result = uploader.upload_video_to_storage(str(upload_source))
+
+                    if tmp_dir:
+                        shutil.rmtree(tmp_dir, ignore_errors=True)
+
                     if not storage_ok:
                         entry["status"] = "gagal"
                         entry["error_message"] = storage_result
                     else:
                         media_url = storage_result
-                        music = None
-                        if music_tracks:
-                            music = self._select_background_sound(
-                                cdata.get("transcript", ""),
-                                cdata.get("title", ""),
-                                cdata.get("hook_text", ""),
-                                music_tracks
-                            )
-                        if music:
-                            entry["music_attached"] = {
-                                "id": music["id"], "name": music["name"], "artist": music["artist"]
-                            }
 
                         try:
                             sched_dt = datetime.fromisoformat(asn.get("scheduled_at"))
@@ -1965,8 +2208,7 @@ class WebAPI:
                             title=cdata.get("title", ""),
                             description=caption,
                             media_url=media_url,
-                            schedule_at_iso=schedule_at_iso,
-                            music=music
+                            schedule_at_iso=schedule_at_iso
                         )
                         if success:
                             entry["status"] = "sukses"

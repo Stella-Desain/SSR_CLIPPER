@@ -77,6 +77,12 @@ class ConfigManager:
                         "secret_key": ""
                     }
                 
+                # Add default Jamendo settings if not exists
+                if "jamendo" not in config:
+                    config["jamendo"] = {
+                        "client_id": ""
+                    }
+                
                 # Add default GPU settings if not exists
                 # Default to enabled: hardware encoding is dramatically faster
                 # than libx264 CPU encoding at equivalent visual quality, and
@@ -121,6 +127,9 @@ class ConfigManager:
             "repliz": {
                 "access_key": "",
                 "secret_key": ""
+            },
+            "jamendo": {
+                "client_id": ""
             },
             "gpu_acceleration": {
                 "enabled": True
