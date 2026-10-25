@@ -1,1861 +1,1198 @@
-"""
-YT Short Clipper Desktop App
-"""
-
-import customtkinter as ctk
 import threading
+import base64
+import requests
+import webview
 import json
 import os
 import sys
 import subprocess
-import re
-import urllib.request
-import io
 from pathlib import Path
-from tkinter import filedialog, messagebox
-from openai import OpenAI
-from PIL import Image, ImageTk
-
-# Import version info
-from version import __version__, UPDATE_CHECK_URL
-
-# Import utilities
-from utils.helpers import get_app_dir, get_bundle_dir, get_ffmpeg_path, get_ytdlp_path, extract_video_id
-from utils.logger import debug_log, setup_error_logging, log_error, get_error_log_path
 from config.config_manager import ConfigManager
-from dialogs.model_selector import SearchableModelDropdown
-from dialogs.youtube_upload import YouTubeUploadDialog
-from dialogs.terms_of_service import TermsOfServiceDialog
-from dialogs.autoklip_promo import AutoKlipPromoDialog
-from components.progress_step import ProgressStep
-from pages.settings_page import SettingsPage
-from pages.browse_page import BrowsePage
-from pages.results_page import ResultsPage
-from pages.status_pages import APIStatusPage, LibStatusPage
-from pages.processing_page import ProcessingPage
-from pages.clipping_page import ClippingPage
-from pages.contact_page import ContactPage
-from pages.highlight_selection_page import HighlightSelectionPage
-from pages.session_browser_page import SessionBrowserPage
+from utils.helpers import get_app_dir, get_bundle_dir, get_ffmpeg_path, get_ytdlp_path
+from clipper_core import AutoClipperCore
+
+class ReplizUploaderAdapter:
+    def __init__(self, access_key, secret_key):
+        self.access_key = access_key
+        self.secret_key = secret_key
+    
+    from dialogs.repliz_upload import ReplizUploadDialog
+    upload_video_to_storage = ReplizUploadDialog.upload_video_to_storage
+    upload_to_repliz = ReplizUploadDialog.upload_to_repliz
 
 # Fix for PyInstaller windowed mode (console=False)
-# When built with console=False, sys.stdout and sys.stderr are None
-# This causes 'NoneType' object has no attribute 'flush' errors
 if sys.stdout is None:
     sys.stdout = open(os.devnull, 'w')
 if sys.stderr is None:
     sys.stderr = open(os.devnull, 'w')
 
-APP_DIR = get_app_dir()
-BUNDLE_DIR = get_bundle_dir()
 
-# Setup error logging to file (for production builds)
-setup_error_logging(APP_DIR)
-
-CONFIG_FILE = APP_DIR / "config.json"
-OUTPUT_DIR = APP_DIR / "output"
-ASSETS_DIR = BUNDLE_DIR / "assets"
-ICON_PATH = ASSETS_DIR / "icon.png"
-ICON_ICO_PATH = ASSETS_DIR / "icon.ico"
-COOKIES_FILE = APP_DIR / "cookies.txt"  # NEW: Cookies file path
-
-
-class YTShortClipperApp(ctk.CTk):
+class WebAPI:
     def __init__(self):
-        super().__init__()
-        
-        self.config = ConfigManager(CONFIG_FILE, OUTPUT_DIR)
-        self.client = None
-        self.current_thumbnail = None
-        self.processing = False
-        self.cancelled = False
-        self.token_usage = {"gpt_input": 0, "gpt_output": 0, "whisper_seconds": 0, "tts_chars": 0}
-        self.youtube_connected = False
-        self.youtube_channel = None
-        self.ytdlp_path = get_ytdlp_path()  # NEW: Store yt-dlp path for subtitle fetching
-        self.cookies_path = COOKIES_FILE  # NEW: Store cookies path
-        
-        # Session data for highlight selection flow
-        self.session_data = None  # Will store result from find_highlights_only
-        
-        self.title("YT Short Clipper")
-        self.geometry("780x620")
-        self.resizable(False, False)
-        
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
-        
-        # Set app icon after window is created
-        self.after(200, self.set_app_icon)
-        
-        self.container = ctk.CTkFrame(self)
-        self.container.pack(fill="both", expand=True)
-        
-        self.pages = {}
-        self.create_home_page()
-        self.create_processing_page()
-        self.create_clipping_page()
-        self.create_highlight_selection_page()
-        self.create_session_browser_page()
-        self.create_results_page()
-        self.create_browse_page()
-        self.create_settings_page()
-        self.create_api_status_page()
-        self.create_lib_status_page()
-        self.create_contact_page()
-        
-        self.show_page("home")
-        self.load_config()
-        self.check_youtube_status()
-        
-        # Update start button state based on cookies
-        self.update_start_button_state()
-        
-        # Check for updates on startup
-        threading.Thread(target=self.check_update_silent, daemon=True).start()
-        
-        # Show Terms of Service if not yet accepted
-        if not self.config.get("tos_accepted", False):
-            self.after(300, self._show_tos_dialog)
-        else:
-            # ToS already accepted in a previous session — show AutoKlip promo
-            # one time only.
-            self.after(500, self._maybe_show_autoklip_promo)
-    
-    def _show_tos_dialog(self):
-        """Show Terms of Service dialog and block app usage until accepted."""
-        def on_accept():
-            self.config.set("tos_accepted", True)
-            # Queue the AutoKlip promo right after ToS acceptance
-            self.after(400, self._maybe_show_autoklip_promo)
-        
-        TermsOfServiceDialog(self, on_accept)
-    
-    def _maybe_show_autoklip_promo(self):
-        """Show AutoKlip promo modal exactly once per install."""
-        if self.config.get("autoklip_promo_shown", False):
-            return
-        try:
-            AutoKlipPromoDialog(self)
-        finally:
-            # Persist immediately so it never shows again, even if user
-            # closes the app without clicking the CTA.
-            self.config.set("autoklip_promo_shown", True)
-    
-    def set_app_icon(self):
-        """Set window icon"""
-        try:
-            if sys.platform == "win32":
-                # Use .ico file directly on Windows
-                if ICON_ICO_PATH.exists():
-                    self.iconbitmap(str(ICON_ICO_PATH))
-                elif ICON_PATH.exists():
-                    # Convert PNG to ICO if needed
-                    img = Image.open(ICON_PATH)
-                    ico_path = ASSETS_DIR / "icon.ico"
-                    img.save(str(ico_path), format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])
-                    self.iconbitmap(str(ico_path))
-            else:
-                if ICON_PATH.exists():
-                    icon_img = Image.open(ICON_PATH)
-                    photo = ImageTk.PhotoImage(icon_img)
-                    self.iconphoto(True, photo)
-                    self._icon_photo = photo
-        except Exception as e:
-            print(f"Icon error: {e}")
-    
-    def show_page(self, name):
-        for page in self.pages.values():
-            page.pack_forget()
-        self.pages[name].pack(fill="both", expand=True)
-        
-        # Refresh browse list when showing browse page
-        if name == "browse":
-            self.pages["browse"].refresh_list()
-        
-        # Refresh API status when showing api_status page
-        if name == "api_status":
-            self.pages["api_status"].refresh_status()
-        
-        # Refresh lib status when showing lib_status page
-        if name == "lib_status":
-            self.pages["lib_status"].refresh_status()
-        
-        # Reset home page state when returning to home
-        if name == "home":
-            self.reset_home_page()
-    
-    def reset_home_page(self):
-        """Reset home page to initial state"""
-        # Clear URL input
-        self.url_var.set("")
-        
-        # Reset thumbnail - recreate preview placeholder
-        self.current_thumbnail = None
-        self.create_preview_placeholder()
-        
-        # Reset subtitle state (keep visible but disabled)
-        self.subtitle_loaded = False
-        self.subtitle_loading.pack_forget()
-        self.subtitle_dropdown.configure(state="disabled", values=["id - Indonesian"])
-        self.subtitle_var.set("id - Indonesian")
-        
-        # Reset clips input to default
-        self.clips_var.set("5")
-        
-        # Update start button state
-        self.update_start_button_state()
+        app_dir = get_app_dir()
+        self.config_file = str(app_dir / "config.json")
+        self.output_dir = str(app_dir / "output")
+        self.status = "idle"
+        self.progress = 0.0
+        self.thread = None
+        self.current_job = None
+        self.job_history = []
 
-    def create_home_page(self):
-        page = ctk.CTkFrame(self.container, fg_color=("#1a1a1a", "#0a0a0a"))
-        self.pages["home"] = page
-        
-        # Import header and footer components
-        from components.page_layout import PageHeader, PageFooter
-        
-        # Top header
-        header = PageHeader(page, self, show_nav_buttons=True)
-        header.pack(fill="x", padx=20, pady=(15, 10))
-        
-        # Load icons for buttons
+    def get_progress(self):
+        return {"status": self.status, "progress": self.progress}
+
+    def get_asset_paths(self):
+        bundle_dir = get_bundle_dir()
+        icon_path = Path(bundle_dir) / "assets" / "icon.png"
+        return {"icon": str(icon_path)}
+
+    def get_icon_data(self):
         try:
-            play_img = Image.open(ASSETS_DIR / "play.png")
-            play_img.thumbnail((20, 20), Image.Resampling.LANCZOS)
-            self.play_icon = ctk.CTkImage(light_image=play_img, dark_image=play_img, size=(20, 20))
+            bundle_dir = get_bundle_dir()
+            icon_path = Path(bundle_dir) / "assets" / "icon.png"
+            if not icon_path.exists():
+                return {"data": ""}
+            raw = icon_path.read_bytes()
+            encoded = base64.b64encode(raw).decode("utf-8")
+            return {"data": f"data:image/png;base64,{encoded}"}
+        except:
+            return {"data": ""}
+
+    def get_ai_settings(self):
+        cfg = self._get_cfg()
+        return cfg.get("ai_providers", {})
+
+    def get_provider_type(self):
+        cfg = self._get_cfg()
+        return {"provider_type": cfg.get("provider_type", "ytclip")}
+
+    def validate_api_key(self, base_url, api_key):
+        if not base_url:
+            return {"status": "error", "message": "Missing base URL"}
+        if not api_key:
+            return {"status": "error", "message": "Missing API key"}
             
-            refresh_img = Image.open(ASSETS_DIR / "refresh.png")
-            refresh_img.thumbnail((20, 20), Image.Resampling.LANCZOS)
-            self.refresh_icon = ctk.CTkImage(light_image=refresh_img, dark_image=refresh_img, size=(20, 20))
-        except Exception as e:
-            debug_log(f"Icon load error: {e}")
-            self.play_icon = None
-            self.refresh_icon = None
-        
-        # ===== TOP ROW: Left config + Right thumbnail =====
-        top_row = ctk.CTkFrame(page, fg_color="transparent")
-        top_row.pack(fill="x", padx=20, pady=(5, 10))
-        
-        # Left column - URL, Subtitle, Clip Count
-        left_col = ctk.CTkFrame(top_row, fg_color="transparent")
-        left_col.pack(side="left", fill="y", padx=(0, 20))
-        
-        # YouTube URL
-        ctk.CTkLabel(left_col, text="YouTube URL", font=ctk.CTkFont(size=11, weight="bold"), 
-            anchor="w").pack(fill="x", pady=(0, 3))
-        
-        url_input_container = ctk.CTkFrame(left_col, fg_color="transparent")
-        url_input_container.pack(fill="x", pady=(0, 8))
-        
-        self.url_var = ctk.StringVar()
-        self.url_var.trace_add("write", self.on_url_change)
-        self.url_entry = ctk.CTkEntry(url_input_container, textvariable=self.url_var, 
-            placeholder_text="Paste YouTube link...", width=220, height=32, border_width=1,
-            border_color=("#3a3a3a", "#2a2a2a"), fg_color=("#1a1a1a", "#0a0a0a"))
-        self.url_entry.pack(side="left", padx=(0, 5))
-        
-        self.paste_btn = ctk.CTkButton(url_input_container, text="📋 Paste", width=65, height=32,
-            fg_color=("#3a3a3a", "#2a2a2a"), hover_color=("#4a4a4a", "#3a3a3a"),
-            font=ctk.CTkFont(size=10), command=self.paste_url)
-        self.paste_btn.pack(side="left")
-        
-        # Subtitle Language
-        ctk.CTkLabel(left_col, text="Subtitle Language", font=ctk.CTkFont(size=11, weight="bold"), 
-            anchor="w").pack(fill="x", pady=(3, 3))
-        
-        self.subtitle_frame = ctk.CTkFrame(left_col, fg_color="transparent")
-        self.subtitle_frame.pack(fill="x", pady=(0, 8))
-        self.subtitle_loaded = False
-        
-        self.subtitle_var = ctk.StringVar(value="id - Indonesian")
-        self.subtitle_dropdown = ctk.CTkOptionMenu(self.subtitle_frame, 
-            variable=self.subtitle_var, values=["id - Indonesian"], width=290,
-            height=32, fg_color=("#2b2b2b", "#1a1a1a"),
-            button_color=("#3a3a3a", "#2a2a2a"), button_hover_color=("#4a4a4a", "#3a3a3a"),
-            state="disabled")
-        self.subtitle_dropdown.pack(anchor="w")
-        
-        self.subtitle_loading = ctk.CTkLabel(self.subtitle_frame, text="⏳ Loading...", 
-            font=ctk.CTkFont(size=10), text_color="gray")
-        
-        # Clip Count
-        ctk.CTkLabel(left_col, text="Clip Count", font=ctk.CTkFont(size=11, weight="bold"), 
-            anchor="w").pack(fill="x", pady=(3, 3))
-        
-        clips_input_frame = ctk.CTkFrame(left_col, fg_color="transparent")
-        clips_input_frame.pack(fill="x", pady=(0, 5))
-        
-        self.clips_var = ctk.StringVar(value="5")
-        clips_entry = ctk.CTkEntry(clips_input_frame, textvariable=self.clips_var, width=60, height=32,
-            fg_color=("#2b2b2b", "#1a1a1a"), border_width=1, border_color=("#3a3a3a", "#2a2a2a"), justify="center")
-        clips_entry.pack(side="left", padx=(0, 8))
-        
-        ctk.CTkLabel(clips_input_frame, text="(1-10)", font=ctk.CTkFont(size=10), 
-            text_color="gray").pack(side="left")
-        
-        # Right column - Thumbnail 16:9
-        right_col = ctk.CTkFrame(top_row, fg_color="transparent")
-        right_col.pack(side="right", fill="y")
-        
-        # Video preview frame 16:9 (400x225)
-        self.thumb_frame = ctk.CTkFrame(right_col, width=400, height=225, 
-            fg_color=("#2b2b2b", "#1a1a1a"), corner_radius=8)
-        self.thumb_frame.pack(anchor="ne")
-        self.thumb_frame.pack_propagate(False)
-        
-        self.create_preview_placeholder()
-        
-        # ===== MIDDLE ROW: Cookies only (full width) =====
-        middle_row = ctk.CTkFrame(page, fg_color="transparent")
-        middle_row.pack(fill="x", padx=20, pady=(0, 10))
-        
-        # YouTube Cookies card (full width)
-        cookies_frame = ctk.CTkFrame(middle_row, fg_color=("#2b2b2b", "#1a1a1a"), corner_radius=8)
-        cookies_frame.pack(fill="x")
-        
-        ctk.CTkLabel(cookies_frame, text="YouTube Cookies", font=ctk.CTkFont(size=11, weight="bold"), 
-            anchor="w").pack(fill="x", padx=12, pady=(10, 5))
-        
-        self.cookies_status_label = ctk.CTkLabel(cookies_frame, text="🍪 No cookies", 
-            font=ctk.CTkFont(size=10), anchor="w", text_color="gray")
-        self.cookies_status_label.pack(fill="x", padx=12, pady=(0, 5))
-        
-        upload_cookies_btn = ctk.CTkButton(cookies_frame, text="📁 Upload", height=28,
-            fg_color=("#3a3a3a", "#2a2a2a"), hover_color=("#4a4a4a", "#3a3a3a"),
-            font=ctk.CTkFont(size=10), command=self.upload_cookies)
-        upload_cookies_btn.pack(fill="x", padx=12, pady=(0, 10))
-        
-        # ===== BOTTOM: Generate button + Browse =====
-        bottom_section = ctk.CTkFrame(page, fg_color="transparent")
-        bottom_section.pack(fill="x", padx=20, pady=(0, 5))
-        
-        self.start_btn = ctk.CTkButton(bottom_section, text="Find Highlights", image=self.play_icon, 
-            compound="left", font=ctk.CTkFont(size=13, weight="bold"),
-            height=40, command=self.start_processing, state="disabled", 
-            fg_color="gray", hover_color="gray", corner_radius=8)
-        self.start_btn.pack(fill="x", pady=(0, 5))
-        
-        sessions_link = ctk.CTkLabel(bottom_section, text="📋 Browse Sessions", 
-            font=ctk.CTkFont(size=10), text_color=("#3B8ED0", "#1F6AA5"), cursor="hand2")
-        sessions_link.pack()
-        sessions_link.bind("<Button-1>", lambda e: self.show_page("session_browser"))
-        
-        # ===== LIB STATUS =====
-        self.lib_status_frame = ctk.CTkFrame(page, fg_color="transparent")
-        self.lib_status_frame.pack(fill="x", padx=20, pady=(5, 0))
-        
-        self.lib_status_label = ctk.CTkLabel(self.lib_status_frame, text="", 
-            font=ctk.CTkFont(size=10), cursor="hand2")
-        self.lib_status_label.pack()
-        self.lib_status_label.bind("<Button-1>", lambda e: self.show_page("lib_status"))
-        
-        # Check and update lib status
-        self.check_lib_status()
-        
-        # Check cookies status
-        self.check_cookies_status()
-        
-        # Footer
-        footer = PageFooter(page, self)
-        footer.pack(fill="x", padx=20, pady=(5, 8), side="bottom")
-    
-    def create_preview_placeholder(self):
-        """Create placeholder content for video preview"""
-        # Clear existing content
-        for widget in self.thumb_frame.winfo_children():
-            widget.destroy()
-        
-        # Preview content container - centered
-        preview_container = ctk.CTkFrame(self.thumb_frame, fg_color="transparent")
-        preview_container.place(relx=0.5, rely=0.5, anchor="center")
-        
-        # Placeholder text
-        self.thumb_label = ctk.CTkLabel(preview_container, 
-            text="📺 Video thumbnail will appear here", 
-            font=ctk.CTkFont(size=12), text_color="gray", justify="center")
-        self.thumb_label.pack()
-    
-    def paste_url(self):
-        """Paste URL from clipboard"""
-        # Check if cookies exist first
-        if not self.cookies_path.exists():
-            # Show custom dialog with buttons
-            self.show_cookies_required_dialog()
-            return
-        
+        # Bypass direct HTTP check for Gemini and Anthropic as they may not support standard /models endpoint for validation
+        if "generativelanguage.googleapis.com" in base_url:
+            return {"status": "ok"}
+        if "api.anthropic.com" in base_url:
+            return {"status": "ok"}
+            
+        url = self._get_models_url(base_url)
         try:
-            # Get clipboard content
-            clipboard_text = self.clipboard_get()
-            if clipboard_text:
-                self.url_var.set(clipboard_text.strip())
+            resp = requests.get(url, headers=self._auth_headers(api_key), timeout=10)
+            if resp.status_code == 200:
+                return {"status": "ok"}
+            return {"status": "error", "message": f"HTTP {resp.status_code}"}
         except Exception as e:
-            debug_log(f"Paste error: {e}")
-            # If clipboard is empty or error, do nothing
-            pass
-    
-    def show_cookies_required_dialog(self):
-        """Show custom dialog for cookies requirement with clickable buttons"""
-        import webbrowser
-        
-        # Create dialog window
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("YouTube Cookies Required")
-        dialog.geometry("500x220")
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
-        
-        # Center dialog on parent window
-        dialog.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - (dialog.winfo_width() // 2)
-        y = self.winfo_y() + (self.winfo_height() // 2) - (dialog.winfo_height() // 2)
-        dialog.geometry(f"+{x}+{y}")
-        
-        # Main content frame
-        content_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        content_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        # Warning message
-        ctk.CTkLabel(content_frame, 
-            text="⚠️ Please upload YouTube cookies first!",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=("#e74c3c", "#e74c3c")).pack(pady=(0, 15))
-        
-        ctk.CTkLabel(content_frame,
-            text="Click a button below to open the setup guide:",
-            font=ctk.CTkFont(size=12)).pack(pady=(0, 15))
-        
-        # Buttons frame
-        buttons_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-        buttons_frame.pack(pady=(0, 10))
-        
-        # English guide button
-        english_btn = ctk.CTkButton(buttons_frame,
-            text="📖 English Guide",
-            width=140,
-            height=35,
-            font=ctk.CTkFont(size=12),
-            fg_color=("#3B8ED0", "#1F6AA5"),
-            hover_color=("#2E7AB8", "#16527D"),
-            command=lambda: [
-                webbrowser.open("https://github.com/jipraks/yt-short-clipper/blob/master/GUIDE.md#3-setup-youtube-cookies"),
-                dialog.destroy()
-            ])
-        english_btn.pack(side="left", padx=5)
-        
-        # Indonesian guide button
-        indonesian_btn = ctk.CTkButton(buttons_frame,
-            text="📖 Bahasa Indonesia",
-            width=140,
-            height=35,
-            font=ctk.CTkFont(size=12),
-            fg_color=("#3B8ED0", "#1F6AA5"),
-            hover_color=("#2E7AB8", "#16527D"),
-            command=lambda: [
-                webbrowser.open("https://github.com/jipraks/yt-short-clipper/blob/master/PANDUAN.md#3-setup-cookies-youtube"),
-                dialog.destroy()
-            ])
-        indonesian_btn.pack(side="left", padx=5)
-        
-        # Close button
-        close_btn = ctk.CTkButton(content_frame,
-            text="Close",
-            width=100,
-            height=35,
-            font=ctk.CTkFont(size=12),
-            fg_color=("#6c757d", "#5a6268"),
-            hover_color=("#5a6268", "#4e555b"),
-            command=dialog.destroy)
-        close_btn.pack(pady=(10, 0))
-    
-    def upload_cookies(self):
-        """Upload cookies.txt file"""
-        file_path = filedialog.askopenfilename(
-            title="Select cookies.txt file",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
-        )
-        
-        if file_path:
+            return {"status": "error", "message": str(e)}
+
+    def get_models(self, base_url, api_key):
+        if not base_url:
+            return {"models": []}
+            
+        # Check if it's Gemini (Google AI Studio)
+        if "generativelanguage.googleapis.com" in base_url:
+            return {"models": [
+                "gemini-3.6-flash",
+                "gemini-3.5-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-pro-preview",
+                "gemini-3-flash-preview",
+                "gemini-3.1-flash-tts-preview"
+                # Info audio/STT-capable model mana aja sekarang ada di
+                # GEMINI_AUDIO_MODELS (web/app.js), gak perlu diulang di sini.
+            ]}
+            
+        # Check if it's Anthropic
+        if "api.anthropic.com" in base_url:
+            return {"models": [
+                "claude-3-5-sonnet-20240620", 
+                "claude-3-opus-20240229", 
+                "claude-3-sonnet-20240229", 
+                "claude-3-haiku-20240307"
+            ]}
+            
+        url = self._get_models_url(base_url)
+        try:
+            resp = requests.get(url, headers=self._auth_headers(api_key), timeout=15)
+            if resp.status_code != 200:
+                return {"models": [], "error": str(resp.status_code)}
+            data = resp.json()
+            items = data.get("data", [])
+            models = []
+            for item in items:
+                mid = item.get("id")
+                if mid:
+                    models.append(mid)
+            return {"models": models}
+        except requests.exceptions.Timeout:
+            return {"models": [], "error": "timeout"}
+        except requests.exceptions.ConnectionError:
+            return {"models": [], "error": "connection failed"}
+        except Exception as e:
+            return {"models": [], "error": str(e)[:60]}
+
+    def test_model(self, base_url, api_key, model, model_type):
+        """Test apakah model tertentu BENERAN bisa dipanggil (real call), bukan cuma ada di daftar."""
+        if model_type == 'local':
             try:
-                # Copy file to app directory
-                import shutil
-                shutil.copy(file_path, self.cookies_path)
-                debug_log(f"Cookies uploaded: {file_path}")
-                
-                # Update status
-                self.check_cookies_status()
-                
-                # Show success message
-                messagebox.showinfo("Success", "cookies.txt uploaded successfully!")
-                
-            except Exception as e:
-                debug_log(f"Upload cookies error: {e}")
-                messagebox.showerror("Upload Failed", f"Failed to upload cookies.txt:\n{str(e)}")
-    
-    def check_cookies_status(self):
-        """Check if cookies.txt exists and update UI"""
-        if self.cookies_path.exists():
-            self.cookies_status_label.configure(
-                text="✅ cookies.txt loaded",
-                text_color=("#27ae60", "#2ecc71")  # Green
-            )
-            # Update start button state when cookies status changes
-            self.update_start_button_state()
-            return True
-        else:
-            self.cookies_status_label.configure(
-                text="🍪 No cookies.txt found",
-                text_color="gray"
-            )
-            # Update start button state when cookies status changes
-            self.update_start_button_state()
-            return False
-    
-    def create_processing_page(self):
-        """Create processing page as embedded frame"""
-        self.pages["processing"] = ProcessingPage(
-            self.container,
-            self.cancel_processing,
-            lambda: self.show_page("home"),
-            self.open_output,
-            self.show_browse_after_complete
-        )
-        # Keep reference to steps for update_progress
-        self.steps = self.pages["processing"].steps
-    
-    def create_clipping_page(self):
-        """Create clipping page as embedded frame"""
-        self.pages["clipping"] = ClippingPage(
-            self.container,
-            self.cancel_processing,
-            lambda: self.show_page("home"),
-            self.open_output,
-            lambda: self.show_page("session_browser")
-        )
-    
-    def create_highlight_selection_page(self):
-        """Create highlight selection page as embedded frame"""
-        self.pages["highlight_selection"] = HighlightSelectionPage(
-            self.container,
-            lambda: self.show_page("home"),  # Back to home
-            self.process_selected_highlights  # Process callback
-        )
-    
-    def create_session_browser_page(self):
-        """Create session browser page as embedded frame"""
-        self.pages["session_browser"] = SessionBrowserPage(
-            self.container,
-            self.config,
-            lambda: self.show_page("home"),  # Back to home
-            self.resume_session,  # Resume callback
-            self  # Pass app reference
-        )
-    
-    def create_results_page(self):
-        """Create results page as embedded frame"""
-        self.pages["results"] = ResultsPage(
-            self.container,
-            self.config,
-            self.client,
-            lambda: self.show_page("processing"),
-            lambda: self.show_page("home"),
-            self.open_output,
-            self.get_youtube_client
-        )
-    
-    def create_settings_page(self):
-        """Create settings page as embedded frame"""
-        self.pages["settings"] = SettingsPage(
-            self.container, 
-            self.config, 
-            self.on_settings_saved,
-            lambda: self.show_page("home"),
-            OUTPUT_DIR,
-            self.check_update_manual
-        )
-    
-    def create_api_status_page(self):
-        """Create API status page as embedded frame"""
-        self.pages["api_status"] = APIStatusPage(
-            self.container,
-            lambda: self.client,
-            lambda: self.config,
-            lambda: (self.youtube_connected, self.youtube_channel),
-            lambda: self.show_page("home"),
-            self.refresh_icon
-        )
-    
-    def create_lib_status_page(self):
-        """Create library status page as embedded frame"""
-        self.pages["lib_status"] = LibStatusPage(
-            self.container,
-            lambda: self.show_page("home"),
-            self.refresh_icon
-        )
-    
-    def create_browse_page(self):
-        """Create browse page as embedded frame"""
-        self.pages["browse"] = BrowsePage(
-            self.container,
-            self.config,
-            self.client,
-            lambda: self.show_page("home"),
-            self.refresh_icon,
-            self.get_youtube_client
-        )
-    
-    def create_contact_page(self):
-        """Create contact page as embedded frame"""
-        self.pages["contact"] = ContactPage(
-            self.container,
-            lambda: self.config.get("installation_id", "unknown"),
-            lambda: self.show_page("home")
-        )
-    
-    def load_config(self):
-        api_key = self.config.get("api_key", "")
-        base_url = self.config.get("base_url", "https://api.openai.com/v1")
-        model = self.config.get("model", "")
-        
-        if api_key:
+                from faster_whisper.utils import download_model
+            except ImportError:
+                return {"status": "error", "message": "Error: whisper library belum terinstall"}
             try:
-                self.client = OpenAI(api_key=api_key, base_url=base_url)
-                # Only update UI if widgets exist
-                if hasattr(self, 'api_dot'):
-                    self.api_dot.configure(text_color="#27ae60")  # Green
-                    self.api_status_label.configure(text=model[:15] if model else "Connected")
+                download_model(model, local_files_only=True)
+                return {"status": "ok", "message": "Ready - Installed"}
+            except Exception:
+                return {"status": "error", "message": "Error: model belum di-download"}
+
+        if not base_url or not api_key:
+            return {"status": "error", "message": "Empty"}
+        if not model:
+            return {"status": "error", "message": "Error: model belum dipilih"}
+
+        headers = self._auth_headers(api_key)
+        url = base_url.rstrip("/")
+
+        try:
+            if model_type == 'chat':
+                endpoint = url if url.endswith("/chat/completions") else f"{url}/chat/completions"
+                resp = requests.post(endpoint, headers=headers, json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 1
+                }, timeout=15)
+                if resp.status_code == 200:
+                    return {"status": "ok", "message": "Ready - API tested"}
+                return {"status": "error", "message": f"Error {resp.status_code}"}
+
+            elif model_type == 'tts':
+                endpoint = url if url.endswith("/audio/speech") else f"{url}/audio/speech"
+                tts_headers = dict(headers)
+                tts_headers["Content-Type"] = "application/json"
+                resp = requests.post(endpoint, headers=tts_headers, json={
+                    "model": model,
+                    "input": "test",
+                    "voice": "alloy"
+                }, timeout=20)
+                if resp.status_code == 200 and resp.content:
+                    return {"status": "ok", "message": "Ready - API tested"}
+                return {"status": "error", "message": f"Error {resp.status_code}"}
+
+            elif model_type == 'stt':
+                endpoint = url if url.endswith("/audio/transcriptions") else f"{url}/audio/transcriptions"
+                wav_bytes = self._generate_silent_wav()
+                files = {'file': ('test.wav', wav_bytes, 'audio/wav')}
+                data = {'model': model}
+                resp = requests.post(endpoint, headers=headers, files=files, data=data, timeout=20)
+                if resp.status_code == 200:
+                    return {"status": "ok", "message": "Ready - API tested"}
+                return {"status": "error", "message": f"Error {resp.status_code}"}
+
+            else:
+                return {"status": "error", "message": "Error: tipe model tidak dikenal"}
+
+        except requests.exceptions.Timeout:
+            return {"status": "error", "message": "Error timeout"}
+        except requests.exceptions.ConnectionError:
+            return {"status": "error", "message": "Error connection failed"}
+        except Exception as e:
+            return {"status": "error", "message": f"Error {str(e)[:60]}"}
+
+    def _generate_silent_wav(self, duration_sec=0.5, sample_rate=16000):
+        """Bikin file WAV silent kecil di memory, dipakai buat test endpoint STT/transcription."""
+        import io
+        import wave
+        buf = io.BytesIO()
+        with wave.open(buf, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(b'\x00\x00' * int(sample_rate * duration_sec))
+        buf.seek(0)
+        return buf.read()
+
+    def save_ai_settings(self, settings):
+        if not isinstance(settings, dict):
+            return {"status": "error"}
+        cfg_mgr = self._get_cfg_manager()
+        cfg_mgr.config["ai_providers"] = settings
+        provider_type = settings.get("_provider_type")
+        if provider_type:
+            cfg_mgr.config["provider_type"] = provider_type
+        highlight_finder = settings.get("highlight_finder", {})
+        cfg_mgr.config["api_key"] = highlight_finder.get("api_key", "")
+        cfg_mgr.config["base_url"] = highlight_finder.get("base_url", "https://api.openai.com/v1")
+        cfg_mgr.config["model"] = highlight_finder.get("model", "gpt-4.1")
+        cfg_mgr.save()
+        return {"status": "saved"}
+
+    def start_processing(self, url, num_clips=5, add_captions=True, add_hook=False, subtitle_lang="id", portrait=False, highlight_finder=True, yt_title_maker=True):
+        if self.thread and self.thread.is_alive():
+            return {"status": "busy"}
+        
+        import time
+        self.current_job = {
+            "id": f"job_{int(time.time())}",
+            "title": f"Processing {url}",
+            "status": "Starting",
+            "progress": 0,
+            "url": url,
+            "clips": num_clips
+        }
+            
+        self.thread = threading.Thread(
+            target=self._run,
+            args=(url, int(num_clips), bool(add_captions), bool(add_hook), subtitle_lang, bool(portrait), bool(highlight_finder), bool(yt_title_maker)),
+            daemon=True,
+        )
+        self.thread.start()
+        return {"status": "started"}
+
+    def _run(self, url, num_clips, add_captions, add_hook, subtitle_lang, portrait, highlight_finder, yt_title_maker):
+        def log_cb(msg):
+            self.status = str(msg)
+            if self.current_job:
+                self.current_job["status"] = str(msg)
+
+        def progress_cb(p):
+            try:
+                self.progress = float(p)
+                if self.current_job:
+                    self.current_job["progress"] = int(float(p) * 100)
             except:
-                if hasattr(self, 'api_dot'):
-                    self.api_dot.configure(text_color="#e74c3c")  # Red
-                    self.api_status_label.configure(text="Invalid key")
-        else:
-            if hasattr(self, 'api_dot'):
-                self.api_dot.configure(text_color="#e74c3c")  # Red
-                self.api_status_label.configure(text="Not configured")
-    
-    def check_youtube_status(self):
-        """Check YouTube connection status"""
+                self.progress = 0.0
+
+        cfg = self._get_cfg()
+        system_prompt = cfg.get("system_prompt", None)
+        temperature = cfg.get("temperature", 1.0)
+        tts_model = cfg.get("tts_model", "tts-1")
+        watermark_settings = cfg.get("watermark", {"enabled": False})
+        credit_watermark_settings = cfg.get("credit_watermark", {"enabled": False})
+        hook_style_settings = cfg.get("hook_style", {})
+        face_tracking_mode = cfg.get("face_tracking_mode", "opencv")
+        mediapipe_settings = cfg.get("mediapipe_settings", {
+            "lip_activity_threshold": 0.15,
+            "switch_threshold": 0.3,
+            "min_shot_duration": 90,
+            "center_weight": 0.3
+        })
+        output_dir = cfg.get("output_dir", str(get_app_dir() / "output"))
+        model = cfg.get("model", "gpt-4.1")
+        ai_providers = cfg.get("ai_providers", {})
+        
+        whisper_model_name = ai_providers.get("whisper_model", "api")
+        local_whisper_settings = {
+            "enabled": whisper_model_name != "api",
+            # NOTE: key must be "model_size" — AutoClipperCore._load_local_whisper()
+            # reads settings.get("model_size", ...). It used to be "model" here,
+            # which meant the user's chosen local Whisper model (e.g. "medium")
+            # was silently ignored and always fell back to "large-v3-turbo".
+            "model_size": whisper_model_name if whisper_model_name != "api" else "large-v3-turbo"
+        }
+
+        core = AutoClipperCore(
+            client=None,
+            ffmpeg_path=get_ffmpeg_path(),
+            ytdlp_path=get_ytdlp_path(),
+            output_dir=output_dir,
+            model=model,
+            tts_model=tts_model,
+            temperature=temperature,
+            system_prompt=system_prompt,
+            watermark_settings=watermark_settings,
+            credit_watermark_settings=credit_watermark_settings,
+            hook_style_settings=hook_style_settings,
+            face_tracking_mode=face_tracking_mode,
+            mediapipe_settings=mediapipe_settings,
+            ai_providers=ai_providers,
+            subtitle_language=subtitle_lang,
+            local_whisper_settings=local_whisper_settings,
+            log_callback=log_cb,
+            progress_callback=lambda s, p=None: progress_cb(p if p is not None else 0.0),
+        )
+
+        # NOTE: this was previously never called anywhere, so the "GPU
+        # Acceleration" toggle in Settings had zero effect on processing -
+        # every clip was always encoded on CPU (libx264) regardless of what
+        # the user selected. Every FFmpeg encode step in the pipeline
+        # (cut, portrait merge, hook, captions, watermark...) goes through
+        # get_video_encoder_args(), which only returns GPU args if this is
+        # called with enabled=True. GPUDetector's encoder settings target
+        # equivalent visual quality to the CPU CRF 18 default (cq 19 /
+        # global_quality 19 / qp 18-19, tuned per vendor), and any runtime
+        # GPU encoder failure already falls back to CPU automatically
+        # (see _run_ffmpeg_subprocess), so enabling it by default is safe.
+        gpu_cfg = cfg.get("gpu_acceleration", {})
+        core.enable_gpu_acceleration(bool(gpu_cfg.get("enabled", True)))
+
+        try:
+            self.status = "running"
+            self.progress = 0.0
+            core.process(url, num_clips=num_clips, add_captions=add_captions, add_hook=add_hook, portrait=portrait, highlight_finder=highlight_finder, yt_title_maker=yt_title_maker)
+            self.status = "complete"
+            self.progress = 1.0
+            if self.current_job:
+                self.current_job["status"] = "Complete"
+                self.current_job["progress"] = 100
+                self.job_history.append(self.current_job)
+                self.current_job = None
+        except Exception as e:
+            self.status = f"error: {e}"
+            if self.current_job:
+                self.current_job["status"] = f"Failed: {e}"
+                self.job_history.append(self.current_job)
+                self.current_job = None
+        finally:
+            self.thread = None
+
+    # --- NEW ENDPOINTS FOR WEB UI ---
+
+    def reload_whisper_model(self):
+        """Reloads the local whisper model."""
+        try:
+            import faster_whisper  # noqa
+            return {"status": "success", "message": "Library whisper terdeteksi. Model akan dipakai ulang di run berikutnya."}
+        except ImportError:
+            return {"status": "error", "message": "Library whisper belum terinstall. Klik 'Install All' dulu."}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def test_repliz_connection(self, access_key, secret_key):
+        try:
+            import requests
+            from requests.auth import HTTPBasicAuth
+            url = "https://api.repliz.com/public/account"
+            params = {"page": 1, "limit": 1}
+            response = requests.get(
+                url, 
+                params=params,
+                auth=HTTPBasicAuth(access_key, secret_key),
+                timeout=10
+            )
+            if response.status_code == 200:
+                return {"status": "success", "message": "Connection successful"}
+            else:
+                error_msg = f"HTTP {response.status_code}"
+                try:
+                    error_msg = response.json().get("message", error_msg)
+                except:
+                    if response.status_code == 401:
+                        error_msg = "Invalid authorization header"
+                return {"status": "error", "message": error_msg}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def get_repliz_dashboard_url(self):
+        """Returns the URL for Repliz Dashboard."""
+        return "https://dashboard.repliz.com"
+
+    def get_account_stats(self):
+        """Returns statistics of connected social accounts, broken down by platform."""
+        try:
+            cfg = self._get_cfg()
+            repliz_cfg = cfg.get("repliz", {})
+            access_key = repliz_cfg.get("access_key")
+            secret_key = repliz_cfg.get("secret_key")
+
+            if not access_key or not secret_key:
+                return {"error": True, "message": "Keys not configured"}
+
+            import requests
+            from requests.auth import HTTPBasicAuth
+            url = "https://api.repliz.com/public/account"
+            params = {"page": 1, "limit": 50}
+
+            response = requests.get(
+                url,
+                params=params,
+                auth=HTTPBasicAuth(access_key, secret_key),
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                docs = data.get("docs", [])
+                total = data.get("totalDocs", len(docs))
+                tiktok_count = sum(1 for a in docs if a.get("type") == "tiktok")
+                youtube_count = sum(1 for a in docs if a.get("type") == "youtube")
+                instagram_count = sum(1 for a in docs if a.get("type") == "instagram")
+                return {
+                    "campaigns": total,
+                    "tiktok_count": tiktok_count,
+                    "youtube_count": youtube_count,
+                    "instagram_count": instagram_count,
+                    "error": False
+                }
+            else:
+                return {"error": True, "message": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"error": True, "message": str(e)}
+
+    def get_repliz_accounts(self):
+        """Returns list of connected Repliz accounts for UI selection (upload account picker)."""
+        try:
+            cfg = self._get_cfg()
+            repliz_cfg = cfg.get("repliz", {})
+            access_key = repliz_cfg.get("access_key")
+            secret_key = repliz_cfg.get("secret_key")
+
+            if not access_key or not secret_key:
+                return {"status": "error", "message": "Repliz keys not configured"}
+
+            import requests
+            from requests.auth import HTTPBasicAuth
+            url = "https://api.repliz.com/public/account"
+            params = {"page": 1, "limit": 50}
+
+            response = requests.get(
+                url,
+                params=params,
+                auth=HTTPBasicAuth(access_key, secret_key),
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                docs = data.get("docs", [])
+                accounts = [
+                    {
+                        "_id": a.get("_id"),
+                        "name": a.get("name"),
+                        "type": a.get("type"),
+                        "isConnected": a.get("isConnected", True)
+                    }
+                    for a in docs
+                ]
+                return {"status": "ok", "accounts": accounts}
+            else:
+                return {"status": "error", "message": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def get_campaigns(self):
+        """Repliz public API has no campaigns endpoint yet. Return an empty list
+        (not an error object) so the frontend's `campaigns.length` check works
+        correctly and the Campaigns Tree just renders empty instead of breaking."""
+        return []
+
+    def get_app_config(self):
+        """Returns safe global config properties for UI"""
+        cfg = self._get_cfg()
+        return {
+            "owner_name": cfg.get("owner_name", "Local User")
+        }
+
+    def get_watermark_settings(self):
+        """Returns watermark settings"""
+        cfg = self._get_cfg()
+        return cfg.get("watermark", {
+            "enabled": False,
+            "image_path": "",
+            "position_x": 0.85,
+            "position_y": 0.05,
+            "opacity": 0.8,
+            "scale": 0.15
+        })
+
+    def save_watermark_settings(self, settings):
+        """Saves watermark settings"""
+        try:
+            cfg = self._get_cfg()
+            cfg["watermark"] = {
+                "enabled": bool(settings.get("enabled", False)),
+                "image_path": str(settings.get("image_path", "")),
+                "position_x": float(settings.get("position_x", 0.85)),
+                "position_y": float(settings.get("position_y", 0.05)),
+                "opacity": float(settings.get("opacity", 0.8)),
+                "scale": float(settings.get("scale", 0.15))
+            }
+            self._get_cfg_manager().save(cfg)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def get_credit_watermark_settings(self):
+        """Returns credit watermark settings"""
+        cfg = self._get_cfg()
+        return cfg.get("credit_watermark", {
+            "enabled": False,
+            "position_x": 0.5,
+            "position_y": 0.95,
+            "size": 0.03,
+            "opacity": 0.7
+        })
+
+    def save_credit_watermark_settings(self, settings):
+        """Saves credit watermark settings"""
+        try:
+            cfg = self._get_cfg()
+            cfg["credit_watermark"] = {
+                "enabled": bool(settings.get("enabled", False)),
+                "position_x": float(settings.get("position_x", 0.5)),
+                "position_y": float(settings.get("position_y", 0.95)),
+                "size": float(settings.get("size", 0.03)),
+                "opacity": float(settings.get("opacity", 0.7))
+            }
+            self._get_cfg_manager().save(cfg)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def get_system_fonts(self):
+        """Returns list of system fonts"""
+        try:
+            from utils.font_scanner import get_font_names
+            names = get_font_names()
+            return {"status": "ok", "fonts": names if names else ["Arial"]}
+        except Exception as e:
+            return {"status": "error", "message": str(e), "fonts": ["Arial"]}
+
+    def get_hook_style_settings(self):
+        """Returns hook style settings"""
+        cfg = self._get_cfg()
+        return cfg.get("hook_style", {
+            "font_name": "Arial",
+            "font_size": 0.054,
+            "font_color": "#FFD700",
+            "bg_color": "#FFFFFF",
+            "corner_radius": 0,
+            "position_x": 0.5,
+            "position_y": 0.333
+        })
+
+    def save_hook_style_settings(self, settings):
+        """Saves hook style settings"""
+        try:
+            from utils.font_scanner import get_path_for_name
+            font_name = str(settings.get("font_name", "Arial"))
+            font_path = get_path_for_name(font_name) or ""
+            cfg = self._get_cfg()
+            cfg["hook_style"] = {
+                "font_name": font_name,
+                "font_path": font_path,
+                "font_size": float(settings.get("font_size", 0.054)),
+                "font_color": str(settings.get("font_color", "#FFD700")),
+                "bg_color": str(settings.get("bg_color", "#FFFFFF")),
+                "corner_radius": int(settings.get("corner_radius", 0)),
+                "position_x": float(settings.get("position_x", 0.5)),
+                "position_y": float(settings.get("position_y", 0.333))
+            }
+            self._get_cfg_manager().save(cfg)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def get_face_tracking_settings(self):
+        """Returns face tracking mode and GPU acceleration settings"""
+        cfg = self._get_cfg()
+        gpu_cfg = cfg.get("gpu_acceleration", {})
+        return {
+            "face_tracking_mode": cfg.get("face_tracking_mode", "opencv"),
+            "gpu_enabled": gpu_cfg.get("enabled", True)
+        }
+
+    def save_face_tracking_settings(self, settings):
+        """Saves face tracking mode and GPU acceleration settings"""
+        try:
+            cfg = self._get_cfg()
+            mode = str(settings.get("face_tracking_mode", "opencv"))
+            if mode not in ("opencv", "mediapipe"):
+                mode = "opencv"
+            cfg["face_tracking_mode"] = mode
+            cfg["gpu_acceleration"] = {
+                "enabled": bool(settings.get("gpu_enabled", False))
+            }
+            self._get_cfg_manager().save(cfg)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def detect_gpu(self):
+        """Detect GPU hardware and recommend encoder. Called from UI button."""
+        try:
+            from utils.gpu_detector import GPUDetector
+            detector = GPUDetector()
+            gpu_info = detector.detect_gpu()
+            recommendation = detector.get_recommended_encoder()
+            return {
+                "status": "ok",
+                "gpu": gpu_info,
+                "recommendation": recommendation
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": str(e),
+                "gpu": {"type": None, "name": "Detection failed", "available": False},
+                "recommendation": {"encoder": None, "preset": None, "available": False, "reason": str(e)}
+            }
+
+    def get_output_dir_settings(self):
+        """Returns the output directory path"""
+        cfg = self._get_cfg()
+        return {
+            "output_dir": cfg.get("output_dir", str(self.output_dir))
+        }
+
+    def save_output_dir_settings(self, settings):
+        """Saves the output directory path. Creates dir if it doesn't exist."""
+        try:
+            from pathlib import Path
+            output_dir = str(settings.get("output_dir", "")).strip()
+            if not output_dir:
+                return {"status": "error", "message": "Output directory is required"}
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            cfg = self._get_cfg()
+            cfg["output_dir"] = output_dir
+            self._get_cfg_manager().save(cfg)
+            self.output_dir = output_dir
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def browse_output_dir(self):
+        """Opens native folder dialog to pick output directory"""
+        import webview
+        try:
+            if not webview.windows:
+                return None
+            result = webview.windows[0].create_file_dialog(
+                webview.FOLDER_DIALOG
+            )
+            if result and len(result) > 0:
+                return {"status": "ok", "path": result[0]}
+            return {"status": "cancelled"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def open_output_dir(self):
+        """Opens the output folder in the system file explorer"""
+        import subprocess
+        import sys
+        from pathlib import Path
+        try:
+            cfg = self._get_cfg()
+            folder = cfg.get("output_dir", str(self.output_dir))
+            if not folder or not Path(folder).exists():
+                return {"status": "error", "message": "Output folder does not exist"}
+            if sys.platform == "win32":
+                subprocess.run(["explorer", folder])
+            elif sys.platform == "darwin":
+                subprocess.run(["open", folder])
+            else:
+                subprocess.run(["xdg-open", folder])
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def get_youtube_status(self):
+        """Check YouTube connection status.
+        Returns status string + channel info if connected.
+        Reuses youtube_uploader.py exactly as the legacy youtube_api_settings.py did.
+        """
         try:
             from youtube_uploader import YouTubeUploader
             uploader = YouTubeUploader()
-            
+
+            if not uploader.is_configured():
+                return {
+                    "status": "not_configured",
+                    "message": "client_secret.json not found in app folder"
+                }
+
             if uploader.is_authenticated():
                 channel = uploader.get_channel_info()
                 if channel:
-                    self.youtube_connected = True
-                    self.youtube_channel = channel
-                    
-                    # Only update UI if widgets exist
-                    if hasattr(self, 'yt_dot'):
-                        self.yt_dot.configure(text_color="#27ae60")  # Green
-                        
-                        # Show channel name
-                        channel_name = channel['title']
-                        self.yt_status_label_home.configure(text=f"{channel_name[:20]}")
-                    return
-            
-            self.youtube_connected = False
-            if hasattr(self, 'yt_dot'):
-                self.yt_dot.configure(text_color="#e74c3c")  # Red
-                self.yt_status_label_home.configure(text="Not connected")
-        except:
-            self.youtube_connected = False
-            if hasattr(self, 'yt_dot'):
-                self.yt_dot.configure(text_color="#e74c3c")  # Red
-                self.yt_status_label_home.configure(text="Not available")
-    
-    def update_connection_status(self):
-        """Update connection status cards (called after settings change)"""
-        self.load_config()
-        self.check_youtube_status()
-    
-    def on_settings_saved(self, updated_config):
-        """Handle settings saved - accepts config dict"""
-        # Update internal config
-        if isinstance(updated_config, dict):
-            self.config.config.update(updated_config)
-            self.config.save()
-            
-            # Update OpenAI client if highlight_finder config changed
-            ai_providers = updated_config.get("ai_providers", {})
-            hf_config = ai_providers.get("highlight_finder", {})
-            if hf_config.get("api_key"):
-                self.client = OpenAI(
-                    api_key=hf_config.get("api_key"),
-                    base_url=hf_config.get("base_url", "https://api.openai.com/v1")
-                )
-    
-    def get_youtube_client(self):
-        """Get OpenAI client for YouTube title generation"""
-        ai_providers = self.config.get("ai_providers", {})
-        yt_config = ai_providers.get("youtube_title_maker", {})
-        
-        if yt_config.get("api_key"):
-            return OpenAI(
-                api_key=yt_config.get("api_key"),
-                base_url=yt_config.get("base_url", "https://api.openai.com/v1")
-            )
-        else:
-            # Fallback to main client for backward compatibility
-            return self.client
-    
-    def on_url_change(self, *args):
-        url = self.url_var.get().strip()
-        video_id = extract_video_id(url)
-        if video_id:
-            # Reset subtitle loaded flag when URL changes
-            self.subtitle_loaded = False
-            self.load_thumbnail(video_id)
-            self.load_subtitles(url)  # Fetch available subtitles
-        else:
-            self.current_thumbnail = None
-            self.subtitle_loaded = False
-            # Recreate placeholder
-            self.create_preview_placeholder()
-            # Reset subtitle dropdown to disabled state
-            self.subtitle_loading.pack_forget()
-            self.subtitle_dropdown.configure(state="disabled", values=["id - Indonesian"])
-            self.subtitle_var.set("id - Indonesian")
-            # Disable start button when URL is invalid or cookies missing
-            self.update_start_button_state()
-    
-    def update_start_button_state(self):
-        """Update start button state based on URL, cookies, and library validation"""
-        has_cookies = self.cookies_path.exists()
-        libs_ok = getattr(self, 'libs_installed', True)  # Default True if not checked yet
-        
-        # Always keep paste button enabled (so user can see alert)
-        self.paste_btn.configure(state="normal")
-        
-        # If no cookies, disable URL entry and start button
-        if not has_cookies:
-            self.url_entry.configure(state="disabled")
-            self.start_btn.configure(state="disabled", fg_color="gray", hover_color="gray")
-            return
-        
-        # Cookies exist - enable URL input
-        self.url_entry.configure(state="normal")
-        
-        # Check if URL is valid, subtitle is loaded, and libs are installed
-        url = self.url_var.get().strip()
-        video_id = extract_video_id(url)
-        
-        if video_id and self.subtitle_loaded and libs_ok:
-            self.start_btn.configure(state="normal", fg_color=("#1f538d", "#14375e"), 
-                                    hover_color=("#144870", "#0d2a47"))
-        else:
-            self.start_btn.configure(state="disabled", fg_color="gray", hover_color="gray")
-    
-    def check_lib_status(self):
-        """Check library installation status and update UI"""
-        from utils.dependency_manager import check_dependency
-        from utils.helpers import get_app_dir, is_ytdlp_module_available
-        
-        app_dir = get_app_dir()
-        
-        # Check each dependency
-        ffmpeg_ok = check_dependency('ffmpeg', app_dir)
-        deno_ok = check_dependency('deno', app_dir)
-        ytdlp_ok = is_ytdlp_module_available()
-        
-        all_ok = ffmpeg_ok and deno_ok and ytdlp_ok
-        self.libs_installed = all_ok
-        
-        if all_ok:
-            # All installed - hide lib status
-            self.lib_status_frame.pack_forget()
-        else:
-            # Clear existing widgets
-            for widget in self.lib_status_frame.winfo_children():
-                widget.destroy()
-            
-            # Create status row with colored indicators
-            status_row = ctk.CTkFrame(self.lib_status_frame, fg_color="transparent")
-            status_row.pack()
-            
-            ctk.CTkLabel(status_row, text="Lib Status:", font=ctk.CTkFont(size=10), 
-                text_color="gray").pack(side="left", padx=(0, 5))
-            
-            # Deno
-            deno_color = "#4ade80" if deno_ok else "#f87171"
-            ctk.CTkLabel(status_row, text=f"Deno {'✓' if deno_ok else '✗'}", 
-                font=ctk.CTkFont(size=10), text_color=deno_color).pack(side="left", padx=(0, 8))
-            
-            # YT-DLP
-            ytdlp_color = "#4ade80" if ytdlp_ok else "#f87171"
-            ctk.CTkLabel(status_row, text=f"YT-DLP {'✓' if ytdlp_ok else '✗'}", 
-                font=ctk.CTkFont(size=10), text_color=ytdlp_color).pack(side="left", padx=(0, 8))
-            
-            # FFmpeg
-            ffmpeg_color = "#4ade80" if ffmpeg_ok else "#f87171"
-            ctk.CTkLabel(status_row, text=f"FFmpeg {'✓' if ffmpeg_ok else '✗'}", 
-                font=ctk.CTkFont(size=10), text_color=ffmpeg_color).pack(side="left", padx=(0, 8))
-            
-            # Install link
-            install_link = ctk.CTkLabel(status_row, text="(Install required libraries)", 
-                font=ctk.CTkFont(size=10), text_color="#f87171", cursor="hand2")
-            install_link.pack(side="left")
-            install_link.bind("<Button-1>", lambda e: self.show_page("lib_status"))
-            
-            self.lib_status_frame.pack(fill="x", padx=20, pady=(5, 0))
-        
-        # Update start button state
-        self.update_start_button_state()
-    
-    def load_subtitles(self, url: str):
-        """Fetch available subtitles for the video"""
-        def fetch():
-            try:
-                # Show loading state
-                self.after(0, lambda: self.show_subtitle_loading())
-                
-                # Import here to avoid circular dependency
-                from clipper_core import AutoClipperCore
-                
-                # Get available subtitles (pass cookies_path)
-                debug_log(f"Fetching subtitles for: {url}")
-                debug_log(f"Cookies path: {self.cookies_path}")
-                debug_log(f"Cookies exists: {self.cookies_path.exists()}")
-                
-                cookies_str = str(self.cookies_path) if self.cookies_path.exists() else None
-                debug_log(f"Passing cookies_path: {cookies_str}")
-                
-                result = AutoClipperCore.get_available_subtitles(
-                    url, 
-                    self.ytdlp_path, 
-                    cookies_path=cookies_str
-                )
-                debug_log(f"Subtitle fetch result: {result}")
-                
-                if result.get("error"):
-                    debug_log(f"Subtitle error: {result['error']}")
-                    self.after(0, lambda: self.on_subtitle_error(result["error"]))
-                    return
-                
-                # Combine manual and auto-generated subtitles
-                all_subs = []
-                
-                # Prioritize manual subtitles
-                for sub in result.get("subtitles", []):
-                    all_subs.append({
-                        "code": sub["code"],
-                        "name": sub["name"],
-                        "type": "manual"
-                    })
-                
-                # Add auto-generated subtitles
-                for sub in result.get("automatic_captions", []):
-                    all_subs.append({
-                        "code": sub["code"],
-                        "name": f"{sub['name']} (auto)",
-                        "type": "auto"
-                    })
-                
-                debug_log(f"Total subtitles found: {len(all_subs)}")
-                
-                if not all_subs:
-                    # No subtitles — allow proceeding with AI transcription fallback
-                    self.after(0, lambda: self.show_no_subtitle_fallback())
-                    return
-                
-                self.after(0, lambda: self.show_subtitle_selector(all_subs))
-                
-            except Exception as e:
-                debug_log(f"Exception in load_subtitles: {str(e)}")
-                import traceback
-                debug_log(traceback.format_exc())
-                err_msg = str(e)
-                self.after(0, lambda msg=err_msg: self.on_subtitle_error(msg))
-        
-        threading.Thread(target=fetch, daemon=True).start()
-    
-    def show_subtitle_loading(self):
-        """Show loading state for subtitle selector"""
-        # Keep dropdown visible but show loading indicator
-        self.subtitle_dropdown.configure(state="disabled")
-        self.subtitle_loading.pack(fill="x", padx=(4, 8), pady=(4, 0))
-    
-    def on_subtitle_error(self, error: str):
-        """Handle subtitle fetch error"""
-        debug_log(f"Subtitle fetch error: {error}")
-        self.subtitle_loaded = False
-        # Hide loading, keep dropdown disabled
-        self.subtitle_loading.pack_forget()
-        self.subtitle_dropdown.configure(state="disabled")
-        # Show error to user
-        messagebox.showerror("Subtitle Error", f"Failed to fetch subtitles:\n\n{error}")
-        # Update button state
-        self.update_start_button_state()
-    
-    def show_subtitle_selector(self, subtitles: list):
-        """Show subtitle selector with available options"""
-        # Hide loading
-        self.subtitle_loading.pack_forget()
-        
-        # Create dropdown options
-        options = [f"{sub['code']} - {sub['name']}" for sub in subtitles]
-        
-        # Set default to Indonesian if available, otherwise first option
-        default_value = options[0]
-        for opt in options:
-            if opt.startswith("id "):
-                default_value = opt
-                break
-        
-        self.subtitle_var.set(default_value)
-        self.subtitle_dropdown.configure(values=options, state="normal")
-        
-        # Mark subtitles as loaded
-        self.subtitle_loaded = True
-        
-        # Update start button state (subtitles loaded successfully)
-        self.update_start_button_state()
-    
-    def show_no_subtitle_fallback(self):
-        """Handle case where no subtitles are available.
-        
-        Since the new flow requires subtitles (no video download for Whisper),
-        we disable the Find Highlights button and inform the user.
-        """
-        # Hide loading
-        self.subtitle_loading.pack_forget()
-        
-        # Set dropdown to show no subtitle message
-        no_sub_option = "none - No subtitle available"
-        self.subtitle_var.set(no_sub_option)
-        self.subtitle_dropdown.configure(values=[no_sub_option], state="disabled")
-        
-        # Do NOT mark as loaded — this prevents Find Highlights button from enabling
-        self.subtitle_loaded = False
-        
-        # Update start button state (will be disabled)
-        self.update_start_button_state()
-    
-    def load_thumbnail(self, video_id: str):
-        def fetch():
-            try:
-                import ssl
-                import certifi
-                
-                # Try with certifi first, fallback to unverified SSL
-                ssl_context = None
-                try:
-                    ssl_context = ssl.create_default_context(cafile=certifi.where())
-                except Exception:
-                    pass
-                
-                if ssl_context is None:
-                    # Fallback to unverified SSL (for PyInstaller builds)
-                    ssl_context = ssl.create_default_context()
-                    ssl_context.check_hostname = False
-                    ssl_context.verify_mode = ssl.CERT_NONE
-                
-                img = None
-                for quality in ["maxresdefault", "hqdefault", "mqdefault"]:
-                    try:
-                        url = f"https://img.youtube.com/vi/{video_id}/{quality}.jpg"
-                        with urllib.request.urlopen(url, timeout=5, context=ssl_context) as r:
-                            data = r.read()
-                        img = Image.open(io.BytesIO(data))
-                        if img.size[0] > 120:
-                            break
-                    except Exception as e:
-                        debug_log(f"Thumbnail fetch error ({quality}): {e}")
-                        continue
-                
-                if img is None:
-                    raise Exception("All thumbnail qualities failed")
-                    
-                # Resize to fit preview area in landscape (16:9 aspect ratio)
-                # Frame is 400x225
-                img.thumbnail((390, 220), Image.Resampling.LANCZOS)
-                self.after(0, lambda: self.show_thumbnail(img))
-            except Exception as e:
-                debug_log(f"Thumbnail load failed: {e}")
-                self.after(0, lambda: self.on_thumbnail_error())
-        
-        # Clear image reference properly before loading new one
-        self.current_thumbnail = None
-        
-        # Show loading state
-        for widget in self.thumb_frame.winfo_children():
-            widget.destroy()
-        
-        loading_container = ctk.CTkFrame(self.thumb_frame, fg_color="transparent")
-        loading_container.place(relx=0.5, rely=0.5, anchor="center")
-        
-        self.thumb_label = ctk.CTkLabel(loading_container, text="Loading...", 
-            font=ctk.CTkFont(size=13), text_color="gray")
-        self.thumb_label.pack()
-        
-        self.start_btn.configure(state="disabled", fg_color="gray", hover_color="gray")
-        threading.Thread(target=fetch, daemon=True).start()
-    
-    def on_thumbnail_error(self):
-        # Clear image reference properly before showing error
-        self.current_thumbnail = None
-        # Recreate placeholder with error message
-        for widget in self.thumb_frame.winfo_children():
-            widget.destroy()
-        
-        preview_container = ctk.CTkFrame(self.thumb_frame, fg_color="transparent")
-        preview_container.place(relx=0.5, rely=0.5, anchor="center")
-        
-        self.thumb_label = ctk.CTkLabel(preview_container, 
-            text="⚠️ Could not load thumbnail\nPlease check the URL", 
-            font=ctk.CTkFont(size=13), text_color="gray", justify="center")
-        self.thumb_label.pack()
-        
-        self.start_btn.configure(state="disabled", fg_color="gray", hover_color="gray")
-    
-    def show_thumbnail(self, img):
-        try:
-            # Clear the preview container and show thumbnail
-            for widget in self.thumb_frame.winfo_children():
-                widget.destroy()
-            
-            # Create image with proper size
-            ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
-            self.current_thumbnail = ctk_img
-            
-            # Show thumbnail centered
-            self.thumb_label = ctk.CTkLabel(self.thumb_frame, image=ctk_img, text="")
-            self.thumb_label.place(relx=0.5, rely=0.5, anchor="center")
-            
-            # Update start button state (checks both URL and cookies)
-            self.update_start_button_state()
+                    return {
+                        "status": "connected",
+                        "channel": channel
+                    }
+                else:
+                    return {
+                        "status": "auth_error",
+                        "message": "Authenticated but could not fetch channel info. Try reconnecting."
+                    }
+            else:
+                return {
+                    "status": "not_connected",
+                    "message": "Click Connect to authorize"
+                }
+        except ImportError:
+            return {
+                "status": "module_error",
+                "message": "YouTube module not available. Check dependencies."
+            }
         except Exception as e:
-            debug_log(f"Error showing thumbnail: {e}")
-            # If thumbnail fails, still update button state
-            self.update_start_button_state()
+            return {"status": "error", "message": str(e)}
 
-    def start_processing(self):
-        # Disable button during validation
-        self.start_btn.configure(state="disabled", text="Validating...")
-        
-        def validate_and_start():
-            try:
-                from openai import OpenAI
-                
-                # Validate Highlight Finder (required for all processing)
-                ai_providers = self.config.get("ai_providers", {})
-                hf_config = ai_providers.get("highlight_finder", {})
-                hf_api_key = hf_config.get("api_key", "").strip()
-                hf_base_url = hf_config.get("base_url", "https://api.openai.com/v1").strip()
-                hf_model = hf_config.get("model", "").strip()
-                
-                if not hf_api_key or not hf_model:
-                    self.after(0, lambda: self._on_validation_failed(
-                        "Highlight Finder API is not configured!\n\n" +
-                        "This is required to find viral moments in videos.\n\n" +
-                        "Please configure it in Settings → AI API Settings → Highlight Finder"))
-                    return
-                
-                # Test Highlight Finder API
-                try:
-                    hf_client = OpenAI(api_key=hf_api_key, base_url=hf_base_url)
-                    
-                    # Try to list models to verify API key and model availability
-                    try:
-                        hf_models = hf_client.models.list()
-                        hf_available = [m.id for m in hf_models.data]
-                        
-                        if hf_model not in hf_available:
-                            self.after(0, lambda: self._on_validation_failed(
-                                f"Highlight Finder model '{hf_model}' is not available!\n\n" +
-                                "Please check your configuration in:\n" +
-                                "Settings → AI API Settings → Highlight Finder"))
-                            return
-                    except Exception as list_error:
-                        # If models.list() fails, the API key might still be valid
-                        # Some providers don't support models.list()
-                        # Just verify the API key is not empty and continue
-                        pass
-                    
-                except Exception as e:
-                    self.after(0, lambda: self._on_validation_failed(
-                        f"Highlight Finder API validation failed!\n\n" +
-                        f"Error: {str(e)[:100]}\n\n" +
-                        "Please check your configuration in:\n" +
-                        "Settings → AI API Settings → Highlight Finder"))
-                    return
-                
-                # All validations passed, proceed with processing
-                self.after(0, self._start_processing_validated)
-                
-            except Exception as e:
-                err_msg = f"Validation error: {str(e)[:100]}"
-                self.after(0, lambda msg=err_msg: self._on_validation_failed(msg))
-        
-        threading.Thread(target=validate_and_start, daemon=True).start()
-    
-    def _on_validation_failed(self, error_msg):
-        """Handle validation failure"""
-        self.start_btn.configure(state="normal", text="Find Highlights")
-        messagebox.showerror("Validation Failed", error_msg)
-    
-    def _start_processing_validated(self):
-        """Start processing after validation passed"""
-        self.start_btn.configure(state="normal", text="Find Highlights")
-        
-        # Legacy validation (backward compatibility)
-        if not self.client:
-            messagebox.showerror("Error", "Configure API settings first!\nClick ⚙️ button.")
-            return
-        
-        url = self.url_var.get().strip()
-        if not extract_video_id(url):
-            messagebox.showerror("Error", "Enter a valid YouTube URL!")
-            return
-        try:
-            num_clips = int(self.clips_var.get())
-            if not 1 <= num_clips <= 10:
-                raise ValueError()
-        except:
-            messagebox.showerror("Error", "Clips must be 1-10!")
-            return
-        
-        # Get selected subtitle language (extract code from "id - Indonesian" format)
-        subtitle_selection = self.subtitle_var.get()
-        subtitle_lang = subtitle_selection.split(" - ")[0] if " - " in subtitle_selection else "id"
-        
-        # Reset UI
-        self.processing = True
-        self.cancelled = False
-        self.token_usage = {"gpt_input": 0, "gpt_output": 0, "whisper_seconds": 0, "tts_chars": 0}
-        
-        # Reset processing page UI
-        self.pages["processing"].reset_ui()
-        
-        self.show_page("processing")
-        
-        output_dir = self.config.get("output_dir", str(OUTPUT_DIR))
-        model = self.config.get("model", "gpt-4.1")
-        
-        # NEW FLOW: Only download subtitle + find highlights (no video download)
-        threading.Thread(target=self.run_find_highlights, 
-                        args=(url, num_clips, output_dir, model, subtitle_lang), 
-                        daemon=True).start()
-    
-    def run_processing(self, url, num_clips, output_dir, model, add_captions, add_hook, subtitle_lang="id"):
-        try:
-            from clipper_core import AutoClipperCore
-            
-            # Wrapper for log callback that also logs to console in debug mode
-            def log_with_debug(msg):
-                debug_log(msg)
-                self.after(0, lambda: self.update_status(msg))
-            
-            # Get system prompt from config
-            # Priority: ai_providers.highlight_finder.system_message > root system_prompt
-            ai_providers = self.config.get("ai_providers", {})
-            highlight_finder = ai_providers.get("highlight_finder", {})
-            system_prompt = highlight_finder.get("system_message") or self.config.get("system_prompt", None)
-            
-            temperature = self.config.get("temperature", 1.0)
-            tts_model = self.config.get("tts_model", "tts-1")
-            watermark_settings = self.config.get("watermark", {"enabled": False})
-            credit_watermark_settings = self.config.get("credit_watermark", {"enabled": False})
-            hook_style_settings = self.config.get("hook_style", {})
-            
-            # Get face tracking mode from config (set in settings page)
-            face_tracking_mode = self.config.get("face_tracking_mode", "opencv")
-            
-            mediapipe_settings = self.config.get("mediapipe_settings", {
-                "lip_activity_threshold": 0.15,
-                "switch_threshold": 0.3,
-                "min_shot_duration": 90,
-                "center_weight": 0.3
-            })
-            
-            core = AutoClipperCore(
-                client=self.client,
-                ffmpeg_path=get_ffmpeg_path(),
-                ytdlp_path=get_ytdlp_path(),
-                output_dir=output_dir,
-                model=model,
-                tts_model=tts_model,
-                temperature=temperature,
-                system_prompt=system_prompt,
-                watermark_settings=watermark_settings,
-                credit_watermark_settings=credit_watermark_settings,
-                hook_style_settings=hook_style_settings,
-                face_tracking_mode=face_tracking_mode,
-                mediapipe_settings=mediapipe_settings,
-                ai_providers=self.config.get("ai_providers"),
-                subtitle_language=subtitle_lang,
-                local_whisper_settings=self.config.get("local_whisper"),
-                log_callback=log_with_debug,
-                progress_callback=lambda s, p: self.after(0, lambda: self.update_progress(s, p)),
-                token_callback=lambda a, b, c, d: self.after(0, lambda: self.update_tokens(a, b, c, d)),
-                cancel_check=lambda: self.cancelled
-            )
-            
-            # Enable GPU acceleration if configured
-            gpu_settings = self.config.get("gpu_acceleration", {})
-            if gpu_settings.get("enabled", False):
-                core.enable_gpu_acceleration(True)
-            
-            core.process(url, num_clips, add_captions=add_captions, add_hook=add_hook)
-            if not self.cancelled:
-                self.after(0, self.on_complete)
-        except Exception as e:
-            error_msg = str(e)
-            debug_log(f"ERROR: {error_msg}")
-            
-            # Log error to file with full traceback
-            log_error(f"Processing failed for URL: {url}", e)
-            
-            if self.cancelled or "cancel" in error_msg.lower():
-                self.after(0, self.on_cancelled)
-            else:
-                self.after(0, lambda: self.on_error(error_msg))
-
-    def update_status(self, msg):
-        self.pages["processing"].update_status(msg)
-    
-    def update_progress(self, status, progress):
-        print(f"[DEBUG] update_progress called: status='{status}', progress={progress}")
-        self.pages["processing"].update_status(status)
-        
-        # Update step indicators based on status text
-        status_lower = status.lower()
-        
-        # Parse progress percentage from status if available
-        progress_match = re.search(r'\((\d+(?:\.\d+)?)%\)|(\d+(?:\.\d+)?)%', status)
-        if progress_match:
-            step_progress = float(progress_match.group(1) or progress_match.group(2)) / 100
-        else:
-            step_progress = None
-        
-        print(f"[DEBUG] Parsed step_progress: {step_progress}")
-        
-        num_steps = len(self.steps)
-        
-        if "download" in status_lower or "processing downloaded" in status_lower or "subtitle" in status_lower:
-            if step_progress is None:
-                step_progress = 0.0
-            self.steps[0].set_active(status, step_progress)
-            for s in self.steps[1:]:
-                s.reset()
-        elif "transcrib" in status_lower:
-            # AI transcription step (3-step mode: step index 1)
-            self.steps[0].set_done("Downloaded")
-            if num_steps >= 3:
-                # 3-step mode: transcription is step 2
-                if step_progress is None:
-                    step_progress = 0.0
-                self.steps[1].set_active(status, step_progress)
-                self.steps[2].reset()
-            elif num_steps >= 2:
-                # 2-step mode fallback
-                if step_progress is None:
-                    step_progress = 0.0
-                self.steps[1].set_active(status, step_progress)
-        elif "highlight" in status_lower or "finding" in status_lower:
-            self.steps[0].set_done("Downloaded")
-            if num_steps >= 3:
-                # 3-step mode: highlights is step 3
-                self.steps[1].set_done("Transcribed")
-                self.steps[2].set_active(status, step_progress)
-            elif num_steps >= 2:
-                # 2-step mode: highlights is step 2
-                self.steps[1].set_active(status, step_progress)
-        elif "complete" in status_lower:
-            for step in self.steps:
-                step.set_done("Complete")
-    
-    def update_tokens(self, gpt_in, gpt_out, whisper, tts):
-        self.token_usage["gpt_input"] += gpt_in
-        self.token_usage["gpt_output"] += gpt_out
-        self.token_usage["whisper_seconds"] += whisper
-        self.token_usage["tts_chars"] += tts
-        
-        # Update processing page display
-        gpt_total = self.token_usage['gpt_input'] + self.token_usage['gpt_output']
-        whisper_minutes = self.token_usage['whisper_seconds'] / 60
-        tts_chars = self.token_usage['tts_chars']
-        self.pages["processing"].update_tokens(gpt_total, whisper_minutes, tts_chars)
-    
-    def run_find_highlights(self, url, num_clips, output_dir, model, subtitle_lang="id"):
-        """NEW: Phase 1 - Find highlights only (don't process yet)"""
-        try:
-            from clipper_core import AutoClipperCore, SubtitleNotFoundError
-            
-            # Wrapper for log callback
-            def log_with_debug(msg):
-                debug_log(msg)
-                self.after(0, lambda: self.update_status(msg))
-            
-            # Get system prompt from config
-            ai_providers = self.config.get("ai_providers", {})
-            highlight_finder = ai_providers.get("highlight_finder", {})
-            system_prompt = highlight_finder.get("system_message") or self.config.get("system_prompt", None)
-            
-            temperature = self.config.get("temperature", 1.0)
-            
-            core = AutoClipperCore(
-                client=self.client,
-                ffmpeg_path=get_ffmpeg_path(),
-                ytdlp_path=get_ytdlp_path(),
-                output_dir=output_dir,
-                model=model,
-                temperature=temperature,
-                system_prompt=system_prompt,
-                ai_providers=self.config.get("ai_providers"),
-                subtitle_language=subtitle_lang,
-                local_whisper_settings=self.config.get("local_whisper"),
-                log_callback=log_with_debug,
-                progress_callback=lambda s, p: self.after(0, lambda: self.update_progress(s, p)),
-                token_callback=lambda a, b, c, d: self.after(0, lambda: self.update_tokens(a, b, c, d)),
-                cancel_check=lambda: self.cancelled
-            )
-            
-            try:
-                # Call find_highlights_only (returns session data - subtitle only, no video)
-                result = core.find_highlights_only(url, num_clips)
-            except SubtitleNotFoundError as snf:
-                # No subtitle found - offer Whisper transcription fallback (local or API)
-                if self.cancelled:
-                    self.after(0, self.on_cancelled)
-                    return
-                
-                self.after(0, lambda: self._show_whisper_fallback_dialog(core, snf, num_clips))
-                return
-            
-            if not self.cancelled and result:
-                # Store session data for later processing
-                self.session_data = result
-                
-                # Navigate to highlight selection page
-                self.after(0, self.show_highlight_selection)
-            elif self.cancelled:
-                self.after(0, self.on_cancelled)
-                
-        except Exception as e:
-            error_msg = str(e)
-            debug_log(f"ERROR: {error_msg}")
-            log_error(f"Find highlights failed for URL: {url}", e)
-            
-            if self.cancelled or "cancel" in error_msg.lower():
-                self.after(0, self.on_cancelled)
-            else:
-                self.after(0, lambda: self.on_error(error_msg))
-    
-    def _show_whisper_fallback_dialog(self, core, snf_error, num_clips: int):
-        """Show dialog asking user if they want to use Whisper API for transcription.
-        
-        Called on the main thread when SubtitleNotFoundError is caught.
+    def connect_youtube(self):
+        """Start YouTube OAuth flow. Opens browser for user login.
+        This is a blocking call — pywebview runs it on a background thread.
         """
-        # Update processing page to show no subtitle found
-        self.steps[0].set_done("Downloaded (no subtitle)")
-        self.pages["processing"].update_status("No subtitle found for this video.")
-        
-        # Check if a transcription method is available:
-        # Local Whisper enabled, OR Caption Maker API key configured.
-        local_whisper_enabled = self.config.get("local_whisper", {}).get("enabled", False)
-        ai_providers = self.config.get("ai_providers", {})
-        cm_config = ai_providers.get("caption_maker", {})
-        cm_api_key = cm_config.get("api_key", "").strip()
-        
-        if not local_whisper_enabled and not cm_api_key:
-            self.on_error(
-                "No subtitle found for this video.\n\n"
-                "You can use AI transcription (Whisper) as a fallback,\n"
-                "but it's not configured yet.\n\n"
-                "Please set it up in:\n"
-                "Settings → AI API Settings → Caption Maker\n"
-                "(enable Local Whisper, or add a Caption Maker API key)"
-            )
-            return
-        
-        # Bring window to front so dialog is visible
-        self.lift()
-        self.focus_force()
-        
-        # Show confirmation dialog
-        result = messagebox.askyesno(
-            "No Subtitle Found",
-            "No subtitle available for this video.\n\n"
-            "Would you like to use AI transcription (Whisper API) instead?\n\n"
-            "This will use your Caption Maker API to transcribe the full video audio.\n"
-            "Note: This may take a while and will consume Whisper API credits.",
-            icon="question"
-        )
-        
-        if result:
-            # Switch processing page to 3-step transcription mode
-            self.pages["processing"].switch_to_transcription_mode()
-            # Refresh self.steps reference
-            self.steps = self.pages["processing"].steps
-            
-            threading.Thread(
-                target=self._run_whisper_transcription,
-                args=(core, snf_error.video_path, snf_error.video_info, 
-                      num_clips, snf_error.session_dir),
-                daemon=True
-            ).start()
-        else:
-            self.on_error(
-                "No subtitle available for this video.\n\n"
-                "Tips:\n"
-                "1. Check available subtitles using 'Check Subtitles'\n"
-                "2. Try a different subtitle language\n"
-                "3. Use a video that has subtitles"
-            )
-    
-    def _run_whisper_transcription(self, core, video_path: str, video_info: dict, 
-                                    num_clips: int, session_dir: str):
-        """Run Whisper transcription fallback in background thread."""
         try:
-            result = core.find_highlights_with_transcription(
-                video_path, video_info, num_clips, session_dir
-            )
-            
-            if not self.cancelled and result:
-                self.session_data = result
-                self.after(0, self.show_highlight_selection)
-            elif self.cancelled:
-                self.after(0, self.on_cancelled)
-                
+            from youtube_uploader import YouTubeUploader
+            uploader = YouTubeUploader()
+
+            if not uploader.is_configured():
+                return {"status": "error", "message": "client_secret.json not found. Set up YouTube API credentials first."}
+
+            uploader.authenticate()  # Opens browser, blocks until user completes OAuth
+            channel = uploader.get_channel_info()
+            if channel:
+                return {"status": "connected", "channel": channel}
+            return {"status": "connected", "channel": {"title": "Unknown"}}
         except Exception as e:
-            error_msg = str(e)
-            debug_log(f"ERROR (Whisper fallback): {error_msg}")
-            log_error(f"Whisper transcription fallback failed", e)
-            
-            if self.cancelled or "cancel" in error_msg.lower():
-                self.after(0, self.on_cancelled)
-            else:
-                self.after(0, lambda: self.on_error(error_msg))
-    
-    def show_highlight_selection(self):
-        """Show highlight selection page with found highlights"""
-        if not self.session_data:
-            messagebox.showerror("Error", "No highlight data available")
-            self.show_page("home")
-            return
-        
-        # Set highlights in selection page (no video_path needed)
-        self.pages["highlight_selection"].set_highlights(
-            self.session_data["highlights"],
-            self.session_data["session_dir"]
-        )
-        
-        # Show the page
-        self.show_page("highlight_selection")
-        
-        # Reset processing flag
-        self.processing = False
-    
-    def resume_session(self, session_data: dict):
-        """Resume a previous session"""
-        # Store session data
-        self.session_data = session_data
-        
-        # Navigate to highlight selection page
-        self.show_highlight_selection()
-    
-    def load_session_clips(self, clips_dir: Path):
-        """Load clips from a session's clips folder and show results page"""
-        # Change back button to go to session browser instead of processing
-        self.pages["results"].set_back_callback(lambda: self.show_page("session_browser"))
-        
-        # Load clips from the specific directory
-        self.pages["results"].load_clips(clips_dir)
-        
-        # Show results page
-        self.pages["results"].show_results()
-        self.show_page("results")
-    
-    def process_selected_highlights(self, selected_highlights: list, add_captions: bool = False, add_hook: bool = False):
-        """NEW: Phase 2 - Process only selected highlights"""
-        if not self.session_data:
-            messagebox.showerror("Error", "No session data available")
-            return
-        
-        # Check if session has URL (new flow) or video_path (old flow)
-        has_url = bool(self.session_data.get("url", ""))
-        has_video = bool(self.session_data.get("video_path", ""))
-        
-        if not has_url and not has_video:
-            messagebox.showerror("Error", 
-                "This session is missing both URL and video path.\n\n"
-                "Please start a new session from the home page.")
-            return
-        
-        if not has_url and has_video:
-            # Old session format — check if video file still exists
-            video_path = self.session_data["video_path"]
-            if not Path(video_path).exists():
-                messagebox.showerror("Error", 
-                    "This is an old session and the video file no longer exists.\n\n"
-                    "Please start a new session from the home page.")
-                return
-        
-        # Store enhancement options
-        self.add_captions = add_captions
-        self.add_hook = add_hook
-        
-        # Reset UI for clipping
-        self.processing = True
-        self.cancelled = False
-        
-        # Reset clipping page UI
-        self.pages["clipping"].reset_ui()
-        self.show_page("clipping")
-        
-        # Start processing in background thread
-        threading.Thread(
-            target=self.run_process_selected,
-            args=(selected_highlights,),
-            daemon=True
-        ).start()
-    
-    def run_process_selected(self, selected_highlights: list):
-        """Process selected highlights in background thread"""
+            return {"status": "error", "message": str(e)}
+
+    def disconnect_youtube(self):
+        """Remove YouTube credentials and disconnect."""
+        import os
         try:
-            from clipper_core import AutoClipperCore
-            
-            # Store total clips for progress tracking
-            self.total_clips = len(selected_highlights)
-            self.current_clip = 0
-            
-            # Wrapper for log callback with clipping progress
-            def log_with_debug(msg):
-                debug_log(msg)
-                self.after(0, lambda: self.update_clipping_status(msg))
-            
-            # Get config
-            ai_providers = self.config.get("ai_providers", {})
-            highlight_finder = ai_providers.get("highlight_finder", {})
-            system_prompt = highlight_finder.get("system_message") or self.config.get("system_prompt", None)
-            
-            temperature = self.config.get("temperature", 1.0)
-            tts_model = self.config.get("tts_model", "tts-1")
-            watermark_settings = self.config.get("watermark", {"enabled": False})
-            credit_watermark_settings = self.config.get("credit_watermark", {"enabled": False})
-            hook_style_settings = self.config.get("hook_style", {})
-            face_tracking_mode = self.config.get("face_tracking_mode", "opencv")
-            mediapipe_settings = self.config.get("mediapipe_settings", {
-                "lip_activity_threshold": 0.15,
-                "switch_threshold": 0.3,
-                "min_shot_duration": 90,
-                "center_weight": 0.3
-            })
-            
-            output_dir = self.config.get("output_dir", str(OUTPUT_DIR))
-            model = self.config.get("model", "gpt-4.1")
-            
-            core = AutoClipperCore(
-                client=self.client,
-                ffmpeg_path=get_ffmpeg_path(),
-                ytdlp_path=get_ytdlp_path(),
-                output_dir=output_dir,
-                model=model,
-                tts_model=tts_model,
-                temperature=temperature,
-                system_prompt=system_prompt,
-                watermark_settings=watermark_settings,
-                credit_watermark_settings=credit_watermark_settings,
-                hook_style_settings=hook_style_settings,
-                face_tracking_mode=face_tracking_mode,
-                mediapipe_settings=mediapipe_settings,
-                ai_providers=self.config.get("ai_providers"),
-                subtitle_language="id",  # Already downloaded
-                local_whisper_settings=self.config.get("local_whisper"),
-                log_callback=log_with_debug,
-                progress_callback=lambda s, p: self.after(0, lambda: self.update_clipping_progress(s, p)),
-                token_callback=lambda a, b, c, d: None,  # No token tracking for clipping
-                cancel_check=lambda: self.cancelled
-            )
-            
-            # Enable GPU acceleration if configured
-            gpu_settings = self.config.get("gpu_acceleration", {})
-            if gpu_settings.get("enabled", False):
-                core.enable_gpu_acceleration(True)
-            
-            # Process selected highlights
-            # New flow: download sections per clip using URL
-            # Old flow (backward compat): use existing video_path
-            session_url = self.session_data.get("url", "")
-            session_video_path = self.session_data.get("video_path", "")
-            
-            if session_url:
-                # New flow: download video sections per clip
-                core.process_selected_highlights(
-                    session_url,
-                    selected_highlights,
-                    self.session_data["session_dir"],
-                    add_captions=self.add_captions,
-                    add_hook=self.add_hook
-                )
-            elif session_video_path:
-                # Old flow (backward compat): process from existing video
-                # Use the old method signature with video_path
-                self._process_old_session(core, session_video_path, selected_highlights)
-            
-            if not self.cancelled:
-                self.after(0, self.on_clipping_complete)
-                
+            from youtube_uploader import YouTubeUploader
+            uploader = YouTubeUploader()
+            uploader.disconnect()
+
+            # Also remove credentials file directly (belt-and-suspenders)
+            creds_file = "youtube_credentials.json"
+            if os.path.exists(creds_file):
+                os.remove(creds_file)
+
+            return {"status": "ok"}
         except Exception as e:
-            error_msg = str(e)
-            debug_log(f"ERROR: {error_msg}")
-            log_error(f"Process selected highlights failed", e)
-            
-            if self.cancelled or "cancel" in error_msg.lower():
-                self.after(0, self.on_clipping_cancelled)
-            else:
-                self.after(0, lambda: self.on_clipping_error(error_msg))
-    
-    def _process_old_session(self, core, video_path: str, selected_highlights: list):
-        """Backward compatibility: process clips from an already-downloaded video (old session format)"""
+            return {"status": "error", "message": str(e)}
+
+    def browse_watermark_image(self):
+        """Opens file dialog to pick an image and copies it to assets/watermarks"""
+        import webview
+        import shutil
         from pathlib import Path
-        
-        session_dir = Path(self.session_data["session_dir"])
-        clips_dir = session_dir / "clips"
-        clips_dir.mkdir(parents=True, exist_ok=True)
-        
-        total_clips = len(selected_highlights)
-        for i, highlight in enumerate(selected_highlights, 1):
-            if self.cancelled:
-                return
-            
-            clip_folder = clips_dir / f"clip_{i:03d}"
-            clip_folder.mkdir(parents=True, exist_ok=True)
-            
-            original_output_dir = core.output_dir
-            core.output_dir = clip_folder.parent
-            
-            try:
-                core.process_clip(video_path, highlight, i, total_clips,
-                                add_captions=self.add_captions, add_hook=self.add_hook,
-                                pre_cut=False)
-            finally:
-                core.output_dir = original_output_dir
-        
-        core.set_progress("Cleaning up...", 0.95)
-        core.cleanup()
-        core.set_progress("Complete!", 1.0)
-    
-    def update_clipping_status(self, msg: str):
-        """Update clipping page status"""
-        self.pages["clipping"].update_status(msg)
-    
-    def update_clipping_progress(self, status: str, progress: float):
-        """Update clipping progress from clipper_core"""
-        # Parse status to extract clip number and title
-        # Format: "Clip 1/3: Converting to portrait... (50%)"
-        if "Clip " in status:
-            try:
-                # Extract clip number
-                clip_part = status.split("Clip ")[1].split(":")[0]  # "1/3"
-                current = int(clip_part.split("/")[0])
-                total = int(clip_part.split("/")[1])
-                
-                # Extract title (everything after "Clip X/Y: " and before " (")
-                title_part = status.split(": ", 1)[1]
-                if " (" in title_part:
-                    title = title_part.split(" (")[0]
-                else:
-                    title = title_part
-                
-                # Update UI
-                self.pages["clipping"].update_progress(current, total, title)
-                self.pages["clipping"].update_status(status)
-            except:
-                # Fallback: just update status
-                self.pages["clipping"].update_status(status)
-        else:
-            # Not a clip progress message, just update status
-            self.pages["clipping"].update_status(status)
-    
-    def cancel_processing(self):
-        if messagebox.askyesno("Cancel", "Are you sure you want to cancel?"):
-            self.cancelled = True
-            # Update both pages
-            if "processing" in self.pages:
-                self.pages["processing"].update_status("⚠️ Cancelling... please wait")
-                self.pages["processing"].cancel_btn.configure(state="disabled")
-            if "clipping" in self.pages:
-                self.pages["clipping"].update_status("⚠️ Cancelling... please wait")
-                self.pages["clipping"].cancel_btn.configure(state="disabled")
-    
-    def on_cancelled(self):
-        """Called when processing is cancelled"""
-        self.processing = False
-        self.pages["processing"].on_cancelled()
-    
-    def on_clipping_cancelled(self):
-        """Called when clipping is cancelled"""
-        self.processing = False
-        self.pages["clipping"].on_cancelled()
-    
-    def on_complete(self):
-        self.processing = False
-        self.pages["processing"].on_complete()
-        
-        # Reset back button to default (processing page)
-        self.pages["results"].set_back_callback(self.pages["results"].default_back_callback)
-        
-        # Load created clips in results page
-        self.pages["results"].load_clips()
-    
-    def on_clipping_complete(self):
-        """Called when clipping completes successfully"""
-        self.processing = False
-        self.pages["clipping"].on_complete()
-    
-    def on_clipping_error(self, error: str):
-        """Called when clipping encounters an error"""
-        self.processing = False
-        self.pages["clipping"].on_error(error)
-    
-    def show_browse_after_complete(self):
-        """Show browse page after processing complete"""
-        self.show_page("browse")
-    
-    def on_error(self, error):
-        self.processing = False
-        self.pages["processing"].on_error(error)
-    
-    def open_output(self):
-        output_dir = self.config.get("output_dir", str(OUTPUT_DIR))
-        if sys.platform == "win32":
-            os.startfile(output_dir)
-        else:
-            subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", output_dir])
-    
-    def open_discord(self):
-        """Open Discord server invite link"""
-        import webbrowser
-        webbrowser.open("https://s.id/ytsdiscord")
-    
-    def open_github(self):
-        """Open GitHub repository"""
-        import webbrowser
-        webbrowser.open("https://github.com/jipraks/yt-short-clipper")
-    
-    def check_update_silent(self):
-        """Check for updates silently on startup"""
         try:
-            # Get installation_id from config
-            installation_id = self.config.get("installation_id", "unknown")
-            url = f"{UPDATE_CHECK_URL}?installation_id={installation_id}&app_version={__version__}"
-            
-            req = urllib.request.Request(url, headers={'User-Agent': 'YT-Short-Clipper'})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode())
-                latest_version = data.get("version", "")
-                download_url = data.get("download_url", "")
-                changelog = data.get("changelog", "")
-                
-                if latest_version and self._compare_versions(latest_version, __version__) > 0:
-                    # New version available
-                    self.after(0, lambda: self._show_update_notification(latest_version, download_url, changelog))
+            if not webview.windows:
+                return None
+            result = webview.windows[0].create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=False,
+                file_types=('Image Files (*.png;*.jpg;*.jpeg)',)
+            )
+            if result and len(result) > 0:
+                file_path = result[0]
+                watermarks_dir = Path("assets/watermarks")
+                watermarks_dir.mkdir(parents=True, exist_ok=True)
+                original_name = Path(file_path).stem
+                extension = Path(file_path).suffix
+                dest_filename = f"watermark_{original_name}{extension}"
+                dest_path = watermarks_dir / dest_filename
+                counter = 1
+                while dest_path.exists():
+                    dest_filename = f"watermark_{original_name}_{counter}{extension}"
+                    dest_path = watermarks_dir / dest_filename
+                    counter += 1
+                shutil.copy2(file_path, dest_path)
+                return {"status": "ok", "path": str(dest_path)}
+            return {"status": "cancelled"}
         except Exception as e:
-            debug_log(f"Update check failed: {e}")
-    
-    def check_update_manual(self):
-        """Check for updates manually from settings page"""
-        try:
-            # Get installation_id from config
-            installation_id = self.config.get("installation_id", "unknown")
-            url = f"{UPDATE_CHECK_URL}?installation_id={installation_id}&app_version={__version__}"
-            
-            req = urllib.request.Request(url, headers={'User-Agent': 'YT-Short-Clipper'})
-            with urllib.request.urlopen(req, timeout=10) as response:
-                data = json.loads(response.read().decode())
-                latest_version = data.get("version", "")
-                download_url = data.get("download_url", "")
-                changelog = data.get("changelog", "")
-                
-                if not latest_version:
-                    messagebox.showinfo("Update Check", "Could not retrieve version information.")
-                    return
-                
-                comparison = self._compare_versions(latest_version, __version__)
-                
-                if comparison > 0:
-                    # New version available
-                    msg = f"New version available: {latest_version}\nCurrent version: {__version__}\n\n"
-                    if changelog:
-                        msg += f"Changelog:\n{changelog}\n\n"
-                    msg += f"Download: {download_url}"
+            return {"status": "error", "message": str(e)}
+
+    def get_dashboard_stats(self):
+        """Returns statistics for the Dashboard."""
+        out_dir = Path(self.output_dir)
+        total_clips = 0
+        storage_bytes = 0
+        
+        if out_dir.exists():
+            for f in out_dir.rglob("*.mp4"):
+                total_clips += 1
+                try:
+                    storage_bytes += f.stat().st_size
+                except:
+                    pass
                     
-                    if messagebox.askyesno("Update Available", msg + "\n\nOpen download page?"):
-                        import webbrowser
-                        webbrowser.open(download_url)
-                elif comparison == 0:
-                    messagebox.showinfo("Update Check", f"You are using the latest version ({__version__})")
-                else:
-                    messagebox.showinfo("Update Check", f"Your version ({__version__}) is newer than the latest release ({latest_version})")
-        except Exception as e:
-            messagebox.showerror("Update Check Failed", f"Could not check for updates:\n{str(e)}")
-    
-    def _compare_versions(self, v1: str, v2: str) -> int:
-        """Compare two version strings. Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if equal"""
-        try:
-            parts1 = [int(x) for x in v1.split('.')]
-            parts2 = [int(x) for x in v2.split('.')]
-            
-            # Pad shorter version with zeros
-            max_len = max(len(parts1), len(parts2))
-            parts1 += [0] * (max_len - len(parts1))
-            parts2 += [0] * (max_len - len(parts2))
-            
-            for p1, p2 in zip(parts1, parts2):
-                if p1 > p2:
-                    return 1
-                elif p1 < p2:
-                    return -1
-            return 0
-        except:
-            return 0
-    
-    def _show_update_notification(self, latest_version: str, download_url: str, changelog: str = ""):
-        """Show update notification popup"""
-        msg = f"New version available: {latest_version}\nCurrent version: {__version__}\n\n"
-        if changelog:
-            msg += f"What's new:\n{changelog}\n\n"
-        msg += "Would you like to download it?"
+        storage_gb = storage_bytes / (1024 * 1024 * 1024)
         
-        if messagebox.askyesno("Update Available", msg):
-            import webbrowser
-            webbrowser.open(download_url)
+        # Format active job if any
+        active_jobs = [self.current_job] if self.current_job else []
+        
+        return {
+            "totalVideosClipped": total_clips,
+            "totalModels": 4, # Just a static number matching UI design
+            "storageUsed": f"{storage_gb:.1f} GB",
+            "activeJobs": active_jobs,
+            "recentJobs": self.job_history[-5:] # Last 5 jobs
+        }
+        
+    def upload_cookies(self):
+        """Opens a file dialog to select cookies.txt and saves it."""
+        try:
+            result = webview.windows[0].create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=False,
+                file_types=('Text Files (*.txt)',)
+            )
+            if result and len(result) > 0:
+                source_path = result[0]
+                target_path = get_app_dir() / "cookies.txt"
+                import shutil
+                shutil.copy2(source_path, target_path)
+                return {"status": "ok", "path": str(target_path)}
+            return {"status": "cancelled"}
+        except Exception as e:
+            print(f"Error uploading cookies: {e}")
+            return {"status": "error", "message": str(e)}
 
+    def save_default_config(self, settings):
+        """Saves default configuration from the Create Clip form."""
+        if not isinstance(settings, dict):
+            return {"status": "error"}
+        cfg_mgr = self._get_cfg_manager()
+        # You could store these under a specific key like 'default_clip_settings'
+        cfg_mgr.config["default_clip_settings"] = settings
+        cfg_mgr.save()
+        return {"status": "saved"}
 
-def handle_exception(exc_type, exc_value, exc_traceback):
-    """Global exception handler to log uncaught exceptions"""
-    # Don't log KeyboardInterrupt
-    if issubclass(exc_type, KeyboardInterrupt):
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-    
-    # Log the exception
-    log_error("Uncaught exception", exc_value)
-    
-    # Show error dialog to user
-    try:
-        import tkinter.messagebox as mb
-        error_log = get_error_log_path()
-        msg = f"An unexpected error occurred:\n\n{exc_value}\n\n"
-        if error_log:
-            msg += f"Error details saved to:\n{error_log}\n\n"
-        msg += "Please report this issue with the error.log file."
-        mb.showerror("Unexpected Error", msg)
-    except:
-        pass
-    
-    # Call default handler
-    sys.__excepthook__(exc_type, exc_value, exc_traceback)
+    def get_default_config(self):
+        """Returns default configuration from the Create Clip form."""
+        cfg_mgr = self._get_cfg_manager()
+        cfg = cfg_mgr.get_all() if hasattr(cfg_mgr, "get_all") else cfg_mgr.config
+        return cfg.get("default_clip_settings", {})
+
+    def get_video_folders(self):
+        """Returns list of video folders (jobs) for the Jobs panel.
+        A 'video folder' = direct child of output_dir that has its own data.json
+        containing a 'url' key (this is the marker that separates the new
+        video-level data.json from the old per-clip data.json format)."""
+        folders = []
+        out_dir = Path(self.output_dir)
+
+        if out_dir.exists():
+            for child in out_dir.iterdir():
+                if not child.is_dir():
+                    continue
+                meta_file = child / "data.json"
+                if not meta_file.exists():
+                    continue
+                try:
+                    with open(meta_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                except Exception:
+                    continue
+                if "url" not in data:
+                    # Bukan folder video baru (kemungkinan folder clip lama/legacy), skip
+                    continue
+                clip_count = len(list(child.glob("*/*.mp4")))
+                folders.append({
+                    "id": child.name,
+                    "title": data.get("title", child.name),
+                    "clip_count": clip_count,
+                    "date": data.get("created_at", ""),
+                    "path": str(child),
+                })
+
+        folders.sort(key=lambda f: f.get("date", ""), reverse=True)
+        return folders
+
+    def get_stock_clips(self, folder_id=None):
+        """Returns a list of clips. If folder_id is given, only returns clips
+        inside that video folder. Otherwise returns clips from ALL video folders."""
+        clips = []
+        out_dir = Path(self.output_dir)
+
+        if not out_dir.exists():
+            return clips
+
+        if folder_id:
+            target_folders = [out_dir / folder_id]
+        else:
+            target_folders = [c for c in out_dir.iterdir() if c.is_dir()]
+
+        for video_folder in target_folders:
+            if not video_folder.exists() or not video_folder.is_dir():
+                continue
+
+            video_meta_file = video_folder / "data.json"
+            video_title = video_folder.name
+            is_new_format = False
+
+            if video_meta_file.exists():
+                try:
+                    with open(video_meta_file, 'r', encoding='utf-8') as f:
+                        vdata = json.load(f)
+                    if "url" in vdata:
+                        video_title = vdata.get("title", video_title)
+                        is_new_format = True
+                except Exception as e:
+                    print(f"Error parsing {video_meta_file}: {e}")
+
+            if is_new_format:
+                # Struktur baru: tiap clip ada di subfolder video_folder/<timestamp>/
+                for clip_json in video_folder.glob("*/data.json"):
+                    try:
+                        with open(clip_json, 'r', encoding='utf-8') as f:
+                            cdata = json.load(f)
+                        mp4s = list(clip_json.parent.glob("*.mp4"))
+                        if not mp4s:
+                            continue
+                        mp4_path = mp4s[0]
+                        stat = mp4_path.stat()
+                        duration_sec = int(cdata.get("duration_seconds", 0))
+                        clips.append({
+                            "id": clip_json.parent.name,
+                            "title": cdata.get("hook_text", cdata.get("title", video_title)),
+                            "video_title": video_title,
+                            "date": stat.st_mtime * 1000,
+                            "duration": f"{duration_sec // 60:02d}:{duration_sec % 60:02d}",
+                            "path": str(mp4_path),
+                        })
+                    except Exception as e:
+                        print(f"Error parsing {clip_json}: {e}")
+            else:
+                # Struktur lama (legacy): folder ini SENDIRI adalah 1 clip
+                try:
+                    if video_meta_file.exists():
+                        with open(video_meta_file, 'r', encoding='utf-8') as f:
+                            cdata = json.load(f)
+                        mp4s = list(video_folder.glob("*.mp4"))
+                        if mp4s:
+                            mp4_path = mp4s[0]
+                            stat = mp4_path.stat()
+                            clips.append({
+                                "id": video_folder.name,
+                                "title": cdata.get("title", "Unknown Clip"),
+                                "video_title": cdata.get("title", "Unknown Clip"),
+                                "date": stat.st_mtime * 1000,
+                                "duration": "00:00",
+                                "path": str(mp4_path),
+                            })
+                except Exception as e:
+                    print(f"Error parsing legacy {video_meta_file}: {e}")
+
+        clips.sort(key=lambda x: x.get("date", 0), reverse=True)
+        return clips
+        
+    def open_output_folder(self):
+        """Opens the output directory in the native file explorer."""
+        out_dir = str(Path(self.output_dir).absolute())
+        try:
+            if sys.platform == "win32":
+                os.startfile(out_dir)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", out_dir])
+            else:
+                subprocess.Popen(["xdg-open", out_dir])
+            return True
+        except Exception as e:
+            print(f"Error opening folder: {e}")
+            return False
+
+    def check_dependencies(self):
+        """Returns the status of dependencies."""
+        app_dir = get_app_dir()
+        cookies_path = app_dir / "cookies.txt"
+        has_cookies = cookies_path.exists()
+        
+        # Simplified dependency check
+        ffmpeg_ok = Path(get_ffmpeg_path()).exists() if get_ffmpeg_path() else False
+        
+        import shutil
+        deno_ok = shutil.which("deno") is not None
+        
+        try:
+            import faster_whisper
+            whisper_ok = True
+        except ImportError:
+            try:
+                import whisper
+                whisper_ok = True
+            except ImportError:
+                whisper_ok = False
+                
+        ytdlp_path = get_ytdlp_path()
+        ytdlp_ok = ytdlp_path is not None and ytdlp_path != ""
+        if ytdlp_path not in ("yt_dlp_module",):
+            # kalau bukan python module, pastikan path/command-nya beneran ada
+            import shutil as _shutil
+            ytdlp_ok = _shutil.which(ytdlp_path) is not None or Path(ytdlp_path).exists()
+        
+        return {
+            "cookies": has_cookies,
+            "ffmpeg": ffmpeg_ok,
+            "deno": deno_ok,
+            "whisper": whisper_ok,
+            "ytdlp": ytdlp_ok
+        }
+
+    def delete_clip(self, clip_path):
+        """Delete a specific clip file and its parent folder if empty."""
+        try:
+            p = Path(clip_path)
+            if p.exists() and p.is_file():
+                parent = p.parent
+                p.unlink()
+                # Also remove the data.json if only that remains
+                remaining = list(parent.iterdir())
+                if not remaining or all(f.name == "data.json" for f in remaining):
+                    import shutil
+                    shutil.rmtree(str(parent), ignore_errors=True)
+                return {"status": "ok"}
+            return {"status": "not_found"}
+        except Exception as e:
+            print(f"Error deleting clip: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def delete_job(self, job_id):
+        """Delete a job from job history."""
+        self.job_history = [j for j in self.job_history if j.get("id") != job_id]
+        return {"status": "ok"}
+
+    def delete_video_folder(self, folder_id):
+        """Delete an entire video folder (and every clip inside it)."""
+        try:
+            target = Path(self.output_dir) / folder_id
+            if target.exists() and target.is_dir():
+                import shutil
+                shutil.rmtree(str(target), ignore_errors=True)
+                return {"status": "ok"}
+            return {"status": "not_found"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def upload_clip(self, clip_path, platform, options=None):
+        """Upload clip to the specified platform."""
+        kwargs = options or {}
+        cfg_mgr = self._get_cfg_manager()
+        
+        if platform == "tiktok":
+            from tiktok_uploader import TikTokUploader
+            uploader = TikTokUploader(cfg_mgr)
+            if not uploader.is_configured() or not uploader.is_authenticated():
+                return {"status": "error", "message": "Kredensial TikTok belum diisi di Settings"}
+            
+            try:
+                title = kwargs.get("title", Path(clip_path).stem)
+                desc = kwargs.get("description", "")
+                result = uploader.upload_video(clip_path, title=title, description=desc)
+                if result.get("success"):
+                    return {"status": "success", "message": result.get("message", "Uploaded to TikTok")}
+                else:
+                    return {"status": "error", "message": result.get("error", "Failed to upload to TikTok")}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+                
+        elif platform == "youtube":
+            from youtube_uploader import YouTubeUploader
+            uploader = YouTubeUploader()
+            if not uploader.is_configured() or not uploader.is_authenticated():
+                return {"status": "error", "message": "Kredensial YouTube belum diisi di Settings"}
+            
+            try:
+                title = kwargs.get("title", Path(clip_path).stem)
+                desc = kwargs.get("description", "")
+                result = uploader.upload_video(clip_path, title=title, description=desc)
+                if result.get("success"):
+                    return {"status": "success", "message": f"Uploaded to YouTube: {result.get('url', '')}"}
+                else:
+                    return {"status": "error", "message": result.get("error", "Failed to upload to YouTube")}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+                
+        elif platform == "repliz":
+            cfg = cfg_mgr.get_all() if hasattr(cfg_mgr, "get_all") else cfg_mgr.config
+            repliz_cfg = cfg.get("repliz", {})
+            acc_key = repliz_cfg.get("access_key")
+            sec_key = repliz_cfg.get("secret_key")
+            if not acc_key or not sec_key:
+                 return {"status": "error", "message": "Kredensial Repliz belum diisi di Settings"}
+            
+            uploader = ReplizUploaderAdapter(acc_key, sec_key)
+            account_id = kwargs.get("account_id")
+            if not account_id:
+                 return {"status": "error", "message": "Missing account_id for Repliz upload"}
+            
+            try:
+                title = kwargs.get("title", Path(clip_path).stem)
+                desc = kwargs.get("description", "")
+                
+                vid_url = uploader.upload_video_to_storage(clip_path)
+                if not vid_url:
+                     return {"status": "error", "message": "Failed to upload video to storage"}
+                     
+                success, msg = uploader.upload_to_repliz(account_id, title, desc, vid_url)
+                if success:
+                     return {"status": "success", "message": msg}
+                else:
+                     return {"status": "error", "message": msg}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+                
+        return {"status": "error", "message": f"Platform '{platform}' tidak didukung"}
+
+    def play_clip(self, clip_path):
+        """Open a clip file in the system default video player."""
+        try:
+            p = str(Path(clip_path).absolute())
+            if sys.platform == "win32":
+                os.startfile(p)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", p])
+            else:
+                subprocess.Popen(["xdg-open", p])
+            return {"status": "ok"}
+        except Exception as e:
+            print(f"Error playing clip: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def install_dependencies(self):
+        """Trigger dependency installation in background."""
+        try:
+            from utils.dependency_manager import DependencyManager
+            dm = DependencyManager()
+            t = threading.Thread(target=dm.install_all, daemon=True)
+            t.start()
+            return {"status": "started"}
+        except Exception as e:
+            print(f"Error starting install: {e}")
+            return {"status": "error", "message": str(e)}
+
+    # --- END NEW ENDPOINTS ---
+
+    def _get_cfg_manager(self):
+        return ConfigManager(Path(self.config_file), Path(self.output_dir))
+
+    def _get_cfg(self):
+        cfg_mgr = self._get_cfg_manager()
+        return cfg_mgr.get_all() if hasattr(cfg_mgr, "get_all") else cfg_mgr.config
+
+    def _get_models_url(self, base_url):
+        url = base_url.rstrip("/")
+        if url.endswith("/v1"):
+            return f"{url}/models"
+        return f"{url}/v1/models"
+
+    def _auth_headers(self, api_key):
+        return {"Authorization": f"Bearer {api_key}"}
 
 
 def main():
-    # Set global exception handler
-    sys.excepthook = handle_exception
+    api = WebAPI()
+    bundle_dir = get_bundle_dir()
+    html_path = Path(bundle_dir) / "web" / "index.html"
     
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    app = YTShortClipperApp()
-    app.mainloop()
+    # Optional: ensure output dir exists
+    os.makedirs(api.output_dir, exist_ok=True)
+    
+    # Configure pywebview window to match Figma designs (which is ~1440x900)
+    window = webview.create_window(
+        "Clipper - YT Short Clipper", 
+        str(html_path), 
+        js_api=api,
+        width=1280, 
+        height=800,
+        min_size=(1024, 700),
+        background_color='#FFFFFF'
+    )
+    
+    # Start webview app
+    webview.start(debug=True)
 
 
 if __name__ == "__main__":

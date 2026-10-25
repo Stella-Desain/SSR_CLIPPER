@@ -142,3 +142,18 @@ def extract_video_id(url: str) -> str:
         if match:
             return match.group(1)
     return None
+
+
+def sanitize_folder_name(title: str, max_length: int = 80) -> str:
+    """Convert a video title into a safe, filesystem-friendly folder name.
+
+    Removes characters not allowed on Windows/Mac/Linux, collapses whitespace,
+    and caps the length so long titles don't break path limits.
+    """
+    if not title:
+        return "Untitled Video"
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', title)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip().strip('.')
+    if not cleaned:
+        cleaned = "Untitled Video"
+    return cleaned[:max_length].strip()

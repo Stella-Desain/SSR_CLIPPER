@@ -74,9 +74,13 @@ class ConfigManager:
                     }
                 
                 # Add default GPU settings if not exists
+                # Default to enabled: hardware encoding is dramatically faster
+                # than libx264 CPU encoding at equivalent visual quality, and
+                # the pipeline already falls back to CPU automatically if no
+                # compatible GPU encoder is found or a GPU encode call fails.
                 if "gpu_acceleration" not in config:
                     config["gpu_acceleration"] = {
-                        "enabled": False
+                        "enabled": True
                     }
                 
                 return config
@@ -113,7 +117,7 @@ class ConfigManager:
                 "secret_key": ""
             },
             "gpu_acceleration": {
-                "enabled": False
+                "enabled": True
             }
         }
         self.save_config(config)

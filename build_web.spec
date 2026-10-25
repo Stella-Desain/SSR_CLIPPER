@@ -9,7 +9,7 @@ opencv_data = collect_data_files('cv2')
 icon_path = 'assets/icon.ico' if os.path.exists('assets/icon.ico') else None
 
 a = Analysis(
-    ['webview_app.py'],
+    ['app.py'],
     pathex=[],
     binaries=[],
     datas=[

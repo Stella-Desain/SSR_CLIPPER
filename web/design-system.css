@@ -1,0 +1,208 @@
+/**
+ * ╔══════════════════════════════════════════════════════════╗
+ * ║          CLIPPER — DESIGN SYSTEM                        ║
+ * ║          Derived 1:1 from Figma (node 2-2)             ║
+ * ║          Last synced: 2026-08-10                        ║
+ * ╚══════════════════════════════════════════════════════════╝
+ *
+ * Usage: @import 'design-system.css' in any stylesheet.
+ * All tokens are CSS custom properties on :root.
+ */
+
+/* ─────────────────────────────────────────────
+   1. COLOR TOKENS
+   ───────────────────────────────────────────── */
+:root {
+  /* Brand / Accent */
+  --color-accent-lime:        #8DC63F; /* sidebar active-indicator lime */
+  --color-accent-lime-hover:  #7AB332;
+  --color-accent-green-bg:    #F2FCE2; /* campaign item expanded bg */
+  --color-accent-green-text:  #2E4D0F; /* campaign expanded label */
+  --color-accent-green-btn:   #8DC63F; /* action button background */
+
+  /* Neutrals - Dark Surface (Sidebar) */
+  --color-sidebar-bg:         #0F2016; /* dark green sidebar */
+  --color-sidebar-text:       rgba(255, 255, 255, 0.55);
+  --color-sidebar-text-hover: rgba(255, 255, 255, 0.90);
+  --color-sidebar-text-active:#8DC63F;
+  --color-sidebar-divider:    rgba(255, 255, 255, 0.08);
+  --color-sidebar-label:      rgba(255, 255, 255, 0.35);
+
+  /* Neutrals - Light Surface (Main canvas) */
+  --color-bg:                 #F5F5F5;  /* page background */
+  --color-surface:            #FFFFFF;  /* card/panel surface */
+  --color-border:             #E5E7EB;  /* card border */
+  --color-border-light:       #F3F4F6;
+
+  /* KPI Card Dark */
+  --color-kpi-dark-bg:        #0A0F11;
+  --color-kpi-dark-text:      #FFFFFF;
+  --color-kpi-dark-subtext:   rgba(255, 255, 255, 0.65);
+
+  /* Text */
+  --color-text-primary:       #111827;
+  --color-text-secondary:     #374151;
+  --color-text-muted:         #6B7280;
+  --color-text-subtle:        #9CA3AF;
+
+  /* Status */
+  --color-status-ok:          #22C55E;
+  --color-status-error:       #EF4444;
+  --color-status-warn:        #F59E0B;
+
+  /* Top Header */
+  --color-header-bg:          #FFFFFF;
+  --color-header-border:      #E5E7EB;
+  --color-header-search-bg:   #F5F5F5;
+  --color-header-search-border: #E5E7EB;
+
+  /* File Item row */
+  --color-row-hover:          #F9FAFB;
+  --color-row-divider:        #F3F4F6;
+}
+
+/* ─────────────────────────────────────────────
+   2. TYPOGRAPHY TOKENS
+   ───────────────────────────────────────────── */
+:root {
+  --font-family:        'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Size */
+  --text-xs:   11px;
+  --text-sm:   12px;
+  --text-base: 14px;
+  --text-md:   16px;
+  --text-lg:   18px;
+  --text-xl:   22px;
+  --text-2xl:  28px;
+  --text-3xl:  34px;
+
+  /* Weight */
+  --font-regular:   400;
+  --font-medium:    500;
+  --font-semibold:  600;
+  --font-bold:      700;
+  --font-extrabold: 800;
+
+  /* Line-height */
+  --lh-tight:   1.2;
+  --lh-snug:    1.35;
+  --lh-normal:  1.5;
+}
+
+/* ─────────────────────────────────────────────
+   3. SPACING TOKENS  (base-4 scale)
+   ───────────────────────────────────────────── */
+:root {
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-7:  28px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+}
+
+/* ─────────────────────────────────────────────
+   4. BORDER RADIUS TOKENS
+   ───────────────────────────────────────────── */
+:root {
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-full: 9999px;
+}
+
+/* ─────────────────────────────────────────────
+   5. SHADOW TOKENS
+   ───────────────────────────────────────────── */
+:root {
+  --shadow-xs:  0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -1px rgba(0,0,0,0.04);
+  --shadow-lg:  0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+  --shadow-kpi-dark: 0 4px 12px rgba(0,0,0,0.25);
+}
+
+/* ─────────────────────────────────────────────
+   6. LAYOUT TOKENS
+   ───────────────────────────────────────────── */
+:root {
+  --sidebar-width:  260px;  /* Figma: left panel ~260px */
+  --header-height:  64px;   /* Figma: TopNavBar height 64px */
+  --content-padding: var(--space-8);  /* 32px */
+
+  /* Bento Grid Gaps */
+  --bento-col-gap:  16px;
+  --bento-row-gap:  16px;
+
+  /* KPI Card Dimensions (Figma exact) */
+  --kpi-card-width:  200px;
+  --kpi-card-height: 132px;
+  --kpi-card-pad:    25px;
+
+  /* File Item */
+  --file-item-height: 50px;
+  --file-item-pad-x:  13px;
+}
+
+/* ─────────────────────────────────────────────
+   7. ANIMATION TOKENS
+   ───────────────────────────────────────────── */
+:root {
+  --transition-fast:   150ms ease;
+  --transition-normal: 200ms ease;
+  --transition-slow:   300ms ease;
+}
+
+/* ─────────────────────────────────────────────
+   8. COMPONENT REFERENCE (Figma node mapping)
+   ───────────────────────────────────────────── */
+/*
+  Figma Frame → CSS Component
+
+  2:2   Dashboard page
+  2:3   Main Content Canvas (.main-wrapper)
+  2:4   Header - TopNavBar (.top-header)
+  2:29  Bento Grid Layout (.bento-grid)
+  2:30  Main Left/Center Column (.bento-left)
+  2:31  Top KPIs Row (.kpi-row)
+  2:32  KPI Card 1 Dark (.kpi-card.kpi-dark)
+  4:4564 KPI Card 2 Light (.kpi-card.kpi-light)
+  4:4314 KPI Card 3 Light Status (.kpi-card.kpi-light.kpi-status)
+  2:89  Campaign + Stock Clips Row (.bento-bottom-row)
+  2:90  Campaign Distribution (.campaign-card)
+  2:220 Stock Clips (.stock-card)
+  2:288 Right Column (.jobs-card)
+  2:100 Details - Tree Item (.tree-item)
+  2:101 Slot Summary (.tree-summary)
+  2:119 Child Button (.tree-child)
+  2:118 Vertical Divider (.tree-vline)
+  3:4015 File Item (.file-item)
+  4:4177 Edit Button (.file-btn)
+*/
+
+/* ─────────────────────────────────────────────
+   9. BASE RESET OVERRIDES
+   ───────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--text-base);
+  font-weight: var(--font-regular);
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  margin: 0;
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 { margin: 0; line-height: var(--lh-tight); }
+p { margin: 0; }
+button { font-family: var(--font-family); cursor: pointer; }
