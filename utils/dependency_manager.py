@@ -10,8 +10,17 @@ import urllib.request
 import zipfile
 import tarfile
 import shutil
+import importlib.util
+import threading
 from pathlib import Path
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from utils.helpers import get_app_dir, get_ytdlp_path
+
+
+DENO_VERSION = "2.6.7"
+_PIP_INSTALL_LOCK = threading.Lock()
 
 
 def _log_to_file(msg):
@@ -111,7 +120,7 @@ def get_deno_download_url():
     os_type, arch = get_os_info()
     
     # Use latest stable version
-    version = "v2.6.7"
+    version = f"v{DENO_VERSION}"
     base_url = f"https://github.com/denoland/deno/releases/download/{version}/"
     
     if os_type == 'windows':
@@ -427,14 +436,15 @@ def setup_deno(app_dir: Path, progress_callback=None) -> bool:
         src = extract_dir / exe_name
         dest = bin_dir / exe_name
         
-        if src.exists():
-            shutil.copy2(src, dest)
-            debug_log(f"Deno copied to: {dest}")
-            
-            # Make executable on Unix systems
-            if os_type != 'windows':
-                import os
-                os.chmod(dest, 0o755)
+        if not src.is_file():
+            debug_log("Deno executable not found in downloaded archive")
+            return False
+        shutil.copy2(src, dest)
+        debug_log(f"Deno copied to: {dest}")
+
+        # Make executable on Unix systems
+        if os_type != 'windows':
+            os.chmod(dest, 0o755)
         
         # Cleanup
         shutil.rmtree(extract_dir, ignore_errors=True)
@@ -475,15 +485,12 @@ class DependencyManager:
     """Wrapper agar app.py bisa memanggil satu method install_all()."""
 
     def __init__(self, app_dir=None):
-        if app_dir is None:
-            if getattr(sys, 'frozen', False):
-                app_dir = Path(sys.executable).parent
-            else:
-                app_dir = Path(__file__).parent.parent
-        self.app_dir = Path(app_dir)
+        self.app_dir = Path(app_dir) if app_dir is not None else get_app_dir()
+        self.last_error = None
+        self.restart_required = False
 
     def install_all(self, progress_callback=None):
-        """Install ffmpeg, deno, yt-dlp, dan whisper. Dipanggil dari background thread."""
+        """Install media tools and timezone data from a background thread."""
         results = {}
 
         debug_log("Starting install_all...")
@@ -500,36 +507,113 @@ class DependencyManager:
 
         results['ytdlp'] = self._install_ytdlp()
         results['whisper'] = self._install_whisper()
+        results['tzdata'] = self._install_tzdata()
 
         debug_log(f"install_all finished: {results}")
         return results
 
-    def _install_ytdlp(self):
+    @staticmethod
+    def _module_available(module_name):
         try:
-            import yt_dlp  # noqa
-            return True
-        except ImportError:
-            try:
-                subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "-U", "yt-dlp"],
-                    check=True, timeout=120
-                )
-                return True
-            except Exception as e:
-                debug_log(f"yt-dlp install error: {e}")
-                return False
+            return importlib.util.find_spec(module_name) is not None
+        except (ImportError, ValueError):
+            return module_name in sys.modules
 
-    def _install_whisper(self):
+    def _run_install(self, command, timeout):
         try:
-            import faster_whisper  # noqa
-            return True
-        except ImportError:
-            try:
-                subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "-U", "faster-whisper"],
-                    check=True, timeout=300
-                )
-                return True
-            except Exception as e:
-                debug_log(f"whisper install error: {e}")
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=timeout,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if result.returncode:
+                self.last_error = (result.stderr or result.stdout or "Installer failed")[-2000:].strip()
                 return False
+            return True
+        except Exception as exc:
+            self.last_error = str(exc)
+            return False
+
+    def _install_package(self, package, module_name, upgrade=False, force_reinstall=False):
+        self.last_error = None
+        self.restart_required = False
+        if not upgrade and not force_reinstall and self._module_available(module_name):
+            return True
+        if getattr(sys, "frozen", False):
+            self.last_error = (
+                f"{package} dibundel dalam aplikasi desktop. Perbarui aplikasi untuk "
+                "mengubah paket ini; executable aplikasi bukan interpreter Python."
+            )
+            return False
+        # pip mutates one environment; serialize even when separate dependency jobs run.
+        with _PIP_INSTALL_LOCK:
+            loaded = module_name in sys.modules
+            command = [sys.executable, "-m", "pip", "install", "--upgrade"]
+            if force_reinstall:
+                command.append("--force-reinstall")
+            ok = self._run_install(
+                [*command, package], 900
+            )
+        if ok:
+            importlib.invalidate_caches()
+            self.restart_required = loaded
+        return ok
+
+    def _install_ytdlp(self, upgrade=False):
+        self.last_error = None
+        self.restart_required = False
+        resolved = get_ytdlp_path()
+        if resolved != "yt_dlp_module" and (Path(resolved).is_file() or shutil.which(resolved)):
+            if not upgrade:
+                return True
+            # Update the executable actually selected by the processing pipeline.
+            return self._run_install([resolved, "--update"], 300)
+        return self._install_package("yt-dlp", "yt_dlp", upgrade)
+
+    def _install_whisper(self, upgrade=False):
+        # The pipeline uses faster_whisper; openai-whisper is not a substitute.
+        return self._install_package("faster-whisper", "faster_whisper", upgrade)
+
+    @staticmethod
+    def _timezone_available():
+        """Probe data, not just the module; Windows has no system IANA database."""
+        try:
+            # Bypass ZoneInfo's cache so missing/broken packaged data is visible.
+            for key in ("UTC", "Asia/Makassar", "America/New_York"):
+                ZoneInfo.no_cache(key)
+            return True
+        except (ZoneInfoNotFoundError, ImportError, OSError, ValueError):
+            return False
+
+    def _install_tzdata(self, upgrade=False):
+        self.last_error = None
+        self.restart_required = False
+        timezone_ready = self._timezone_available()
+        if not upgrade and timezone_ready:
+            return True
+        # A discoverable tzdata module can still have missing/corrupt zone files.
+        if not self._install_package("tzdata", "tzdata", upgrade=True, force_reinstall=not timezone_ready):
+            return False
+        ZoneInfo.clear_cache()
+        if not self._timezone_available():
+            self.last_error = "Data zona waktu belum dapat dibaca setelah instalasi tzdata. Perbarui aplikasi atau perbaiki lingkungan Python."
+            return False
+        return True
+
+    def install(self, name, upgrade=False):
+        """Perform an installation and retain its real failure for the job endpoint."""
+        self.last_error = None
+        self.restart_required = False
+        if name == "ytdlp":
+            return self._install_ytdlp(upgrade=upgrade)
+        if name == "whisper":
+            return self._install_whisper(upgrade=upgrade)
+        if name == "tzdata":
+            return self._install_tzdata(upgrade=upgrade)
+        setup = {"ffmpeg": setup_ffmpeg, "deno": setup_deno}.get(name)
+        if setup is None:
+            self.last_error = f"Unknown dependency: {name}"
+            return False
+        ok = setup(self.app_dir)
+        if not ok:
+            self.last_error = f"Instalasi {name} gagal. Periksa koneksi dan izin folder aplikasi."
+        return ok

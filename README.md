@@ -43,6 +43,8 @@ If you want to contribute or run from source:
 
 ## ✨ Features
 
+- **Editor template** — Create reusable visual designs inside the app: video layout, custom subtitles, dynamic titles, images, frames, relative layer timing, sample audio and real MP4 test renders. Publish immutable versions for campaign template pools. See [the template Editor guide](docs/TEMPLATE_EDITOR_GUIDE.md).
+
 - **🎥 Auto Download** - Downloads YouTube videos with subtitles using yt-dlp
 - **🔍 AI Highlight Detection** - Uses GPT-4 to identify the most engaging segments (60-120 seconds)
 - **✂️ Smart Clipping** - Automatically cuts video at optimal timestamps
@@ -106,7 +108,7 @@ If you want to contribute or run from source:
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| Python | 3.10+ | Runtime |
+| Python | 3.12 | Project runtime |
 | FFmpeg | 4.4+ | Video processing |
 | yt-dlp | Latest | YouTube downloading |
 | Deno | 2.x | Required by yt-dlp for some extractors |
@@ -177,17 +179,35 @@ pip install yt-dlp
 
 ### 3. Install Python Dependencies
 
+Windows:
+
+```powershell
+py -3.12 -m pip install -r requirements.txt
+```
+
+macOS/Linux:
+
 ```bash
-pip install -r requirements.txt
+python3.12 -m pip install -r requirements.txt
 ```
 
 ### 4. Run the App
 
+Windows:
+
+```powershell
+py -3.12 app.py
+```
+
+macOS/Linux:
+
 ```bash
-python app.py
+python3.12 app.py
 ```
 
 The app will create a `config.json` file on first run where you can save your AI API keys and other settings.
+
+On Windows, double-click `app.py` to open the project with the installed Python 3.12. `run_app.bat` uses the same interpreter. No virtual environment is required; see [Windows setup](docs/RUN_WINDOWS.md).
 
 ---
 
@@ -404,13 +424,12 @@ The desktop app shows real-time token usage and cost estimation during processin
 
 ### Windows
 
-```bash
-pip install -r requirements.txt
-pip install pyinstaller
-
-pyinstaller build.spec
-# Output: dist/SSR_CLIPPER.exe
+```powershell
+.\build_exe.bat
+# Hasil: .\dist\SSR_CLIPPER.exe
 ```
+
+Build memakai Python 3.12 melalui `py -3.12`, tanpa venv; EXE hasilnya dapat dijalankan tanpa Python. Petunjuk untuk mempertahankan data campaign dan output ada di [panduan Windows](docs/RUN_WINDOWS.md).
 
 ### macOS
 

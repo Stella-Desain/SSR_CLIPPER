@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ssr-template-engine"
+version = "1.0.0"
+description = "Portable MLT template packages for independent video authoring and rendering"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+packages = ["ssr_template_engine"]

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ssr-template-studio"
+version = "1.0.0"
+description = "Kdenlive template export toolkit, independent of SSR_CLIPPER"
+requires-python = ">=3.10"
+dependencies = ["ssr-template-engine==1.0.0"]
+
+[project.scripts]
+ssr-template-export = "ssr_template_studio.cli:main"
+
+[tool.setuptools]
+packages = ["ssr_template_studio"]

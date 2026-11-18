@@ -26,8 +26,9 @@ window.Components.Shell = function () {
   const menuItems = [
     { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
     { id: 'campaign', icon: 'campaign', label: 'Campaign' },
+    { id: 'editor', icon: 'editor', label: 'Editor' },
     { id: 'create-clip', icon: 'create-clip', label: 'Create Clip' },
-    { id: 'stock-clip', icon: 'stock-clip', label: 'Stock Clip' },
+    { id: 'stock-clip', icon: 'stock-clip', label: 'Review & Upload' },
   ];
 
   const generalItems = [
@@ -37,6 +38,7 @@ window.Components.Shell = function () {
 
   function svgIcon(type) {
     const icons = {
+      'editor': '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 8h18M16 8v13M7 12h5M7 16h3"></path></svg>',
       'dashboard': '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect height="9" rx="1" width="7" x="3" y="3"></rect><rect height="5" rx="1" width="7" x="14" y="3"></rect><rect height="9" rx="1" width="7" x="14" y="12"></rect><rect height="5" rx="1" width="7" x="3" y="16"></rect></svg>',
       'campaign': '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v1a2 2 0 0 1-2 2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 1 2 2v1a3 3 0 0 0 6 0v-1a2 2 0 0 1 2-2h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-2a2 2 0 0 1-2-2V5a3 3 0 0 0-3-3Z"></path></svg>',
       'create-clip': '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect height="18" rx="2" width="18" x="3" y="3"></rect><path d="M15 3v18"></path><path d="M3 15h12"></path><path d="m9 9 3 3-3 3"></path></svg>',
@@ -60,6 +62,14 @@ window.Components.Shell = function () {
       const a = document.createElement('div');
       a.className = 'nav-item';
       a.dataset.view = item.id;
+      a.setAttribute('role', 'button');
+      a.setAttribute('tabindex', '0');
+      a.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          a.click();
+        }
+      });
       a.innerHTML = svgIcon(item.icon) + `<span>${item.label}</span>`;
       group.appendChild(a);
     });

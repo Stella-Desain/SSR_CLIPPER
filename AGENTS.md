@@ -6,7 +6,7 @@
 ## 🏗️ Architecture & Tech Stack
 
 ### Core Technology
-- **Language**: Python 3.10+
+- **Language**: Python 3.12 (installed interpreter; no venv required on Windows)
 - **Desktop shell**: pywebview (native window wrapping a local web UI)
 - **Frontend**: Plain HTML/CSS/JS in `web/` (no framework, no build step)
 - **Video Processing**: FFmpeg (via subprocess), OpenCV (face detection), MediaPipe (speaker tracking)
@@ -77,5 +77,5 @@
 
 ### Running Locally
 ```bash
-pip install -r requirements.txt
-python app.py
+py -3.12 -m pip install -r requirements.txt
+py -3.12 app.py

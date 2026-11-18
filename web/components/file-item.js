@@ -14,6 +14,7 @@
  */
 
 window.FileItem = (function () {
+  const escapeText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   // ── Shared base item styles (dark bg, 50px row) ──────────────
   // Figma: background rgba dark, border-radius, height 50px
@@ -65,9 +66,9 @@ window.FileItem = (function () {
     el.innerHTML = `
       <!-- Left: text block -->
       <div style="flex:1;min-width:0;">
-        <div class="fi-title" style="font-size:14px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;">${title}</div>
+        <div class="fi-title" style="font-size:14px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;">${escapeText(title)}</div>
         <div class="fi-sub" style="font-size:12px;color:#6B7280;margin-top:2px;line-height:1.2;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">
-          <span>${info1}</span><span style="margin:0 4px;">-</span><span>${info2}</span>
+          <span>${escapeText(info1)}</span><span style="margin:0 4px;">-</span><span>${escapeText(info2)}</span>
         </div>
       </div>
       <!-- Right: edit button -->
@@ -106,9 +107,9 @@ window.FileItem = (function () {
 
     el.innerHTML = `
       <div style="flex:1;min-width:0;">
-        <div class="fi-title" style="font-size:14px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;">${title}</div>
+        <div class="fi-title" style="font-size:14px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;">${escapeText(title)}</div>
         <div class="fi-sub" style="font-size:12px;color:#6B7280;margin-top:2px;line-height:1.2;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">
-          <span>${info1}</span><span style="margin:0 4px;">-</span><span>${info2}</span>
+          <span>${escapeText(info1)}</span><span style="margin:0 4px;">-</span><span>${escapeText(info2)}</span>
         </div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;margin-left:10px;">
@@ -120,7 +121,7 @@ window.FileItem = (function () {
             ${ICON_TRASH}
           </button>
         </div>
-        <div style="font-size:11px;color:#6B7280;margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">${size}</div>
+        <div style="font-size:11px;color:#6B7280;margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">${escapeText(size)}</div>
       </div>
     `;
 
@@ -145,9 +146,9 @@ window.FileItem = (function () {
 
     el.innerHTML = `
       <div style="flex:1;min-width:0;">
-        <div class="fi-title" style="font-size:14px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;">${title}</div>
+        <div class="fi-title" style="font-size:14px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;">${escapeText(title)}</div>
         <div class="fi-sub" style="font-size:12px;color:#6B7280;margin-top:2px;line-height:1.2;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">
-          <span>${info1}</span><span style="margin:0 4px;">-</span><span>${info2}</span>
+          <span>${escapeText(info1)}</span><span style="margin:0 4px;">-</span><span>${escapeText(info2)}</span>
         </div>
       </div>
       <div class="fi-actions" style="display:flex;align-items:center;gap:10px;margin-left:12px;">

@@ -85,6 +85,7 @@ ipython_config.py
 
 # pyenv
 .python-version
+!/.python-version
 
 # pipenv
 Pipfile.lock
@@ -104,6 +105,7 @@ celerybeat.pid
 
 # Environments
 .venv
+.venv312/
 env/
 venv/
 ENV/
@@ -192,6 +194,7 @@ assets/watermarks/*
 # ============================================
 # Main output directories
 output/
+output_backup/
 clips/
 downloads/
 
@@ -332,3 +335,15 @@ cookies.txt
 ffmpeg
 bin
 .gemini/
+
+# Durable local workflow state and imported campaign files
+*.sqlite3-wal
+*.sqlite3-shm
+campaign_assets/
+_workflow_previews/
+_runtime/
+template_library/
+template_projects/
+
+# Local standalone Windows build, placed beside existing app data
+/SSR_CLIPPER.exe

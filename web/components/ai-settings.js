@@ -16,10 +16,26 @@ window.Components.AiSettingsView = function () {
   headerRight.style.cssText = 'display:flex;align-items:center;gap:16px;flex-wrap:wrap;';
   headerRight.innerHTML = `
     <div class="dep-status">
-      <div class="dep-item"><span class="dep-dot err"></span> yt-dlp</div>
-      <div class="dep-item"><span class="dep-dot err"></span> ffmpeg</div>
-      <div class="dep-item"><span class="dep-dot err"></span> deno</div>
-      <div class="dep-item"><span class="dep-dot err"></span> whisper</div>
+      <div class="dep-item" data-dep="ytdlp">
+        <span class="dep-dot err"></span> yt-dlp
+        <button class="dep-action-btn" data-dep="ytdlp" style="margin-left:4px;font-size:11px;padding:2px 10px;border-radius:6px;border:none;cursor:pointer;font-weight:600;background:#EF4444;color:#fff;">Install</button>
+      </div>
+      <div class="dep-item" data-dep="ffmpeg">
+        <span class="dep-dot err"></span> ffmpeg
+        <button class="dep-action-btn" data-dep="ffmpeg" style="margin-left:4px;font-size:11px;padding:2px 10px;border-radius:6px;border:none;cursor:pointer;font-weight:600;background:#EF4444;color:#fff;">Install</button>
+      </div>
+      <div class="dep-item" data-dep="deno">
+        <span class="dep-dot err"></span> deno
+        <button class="dep-action-btn" data-dep="deno" style="margin-left:4px;font-size:11px;padding:2px 10px;border-radius:6px;border:none;cursor:pointer;font-weight:600;background:#EF4444;color:#fff;">Install</button>
+      </div>
+      <div class="dep-item" data-dep="whisper">
+        <span class="dep-dot err"></span> whisper
+        <button class="dep-action-btn" data-dep="whisper" style="margin-left:4px;font-size:11px;padding:2px 10px;border-radius:6px;border:none;cursor:pointer;font-weight:600;background:#EF4444;color:#fff;">Install</button>
+      </div>
+      <div class="dep-item" data-dep="tzdata">
+        <span class="dep-dot err"></span> tzdata (zona waktu)
+        <button class="dep-action-btn" data-dep="tzdata" style="margin-left:4px;font-size:11px;padding:2px 10px;border-radius:6px;border:none;cursor:pointer;font-weight:600;background:#EF4444;color:#fff;">Install</button>
+      </div>
     </div>
   `;
 
@@ -45,6 +61,16 @@ window.Components.AiSettingsView = function () {
   headerRow.appendChild(headerLeft);
   headerRow.appendChild(headerRight);
   section.appendChild(headerRow);
+
+  const timeCard=document.createElement('div');timeCard.className='card wf-global-time';
+  const timeLabel=document.createElement('label');timeLabel.className='wf-field';timeLabel.textContent='Zona waktu global';
+  const timezoneSelect=document.createElement('select');timezoneSelect.className='select';timezoneSelect.disabled=true;
+  const namedZones=[['Asia/Makassar','WITA (UTC+08:00)'],['Asia/Jakarta','WIB (UTC+07:00)'],['Asia/Jayapura','WIT (UTC+09:00)'],['UTC','UTC']];
+  const available=typeof Intl.supportedValuesOf==='function'?Intl.supportedValuesOf('timeZone'):[];
+  for(const [value,label] of [...namedZones,...available.filter(z=>!namedZones.some(([v])=>v===z)).map(z=>[z,z])])timezoneSelect.add(new Option(label,value));
+  timezoneSelect.value='Asia/Makassar';timezoneSelect.setAttribute('aria-label','Zona waktu global');timeLabel.append(timezoneSelect);
+  const timeHelp=document.createElement('p');timeHelp.className='wf-template-intro';timeHelp.textContent='Berlaku untuk semua akun, jadwal, dan tampilan waktu. Format jam selalu AM/PM. Jadwal yang sudah dibuat tetap pada waktu tayangnya; periksa kembali preview distribusi setelah mengganti zona.';
+  timeCard.append(timeLabel,timeHelp);section.append(timeCard);
 
   // Main grid: 2/3 API config + 1/3 Repliz
   const mainGrid = document.createElement('div');
@@ -273,6 +299,9 @@ window.Components.AiSettingsView = function () {
 
   apiGrid.appendChild(custom3Row);
   apiGrid.appendChild(briefExtractor.element);
+  const musicAnalyzer = makeApiField('Music Audio Analyzer', '[Custom2] Visual-AI', true);
+  musicAnalyzer.element.style.gridColumn = '2';
+  apiGrid.appendChild(musicAnalyzer.element);
 
   apiBody.appendChild(apiGrid);
   apiCard.appendChild(apiBody);
@@ -923,6 +952,7 @@ window.Components.AiSettingsView = function () {
   return {
     element: section,
     fields: {
+      timezoneSelect,
       providerButtons: [],
       whisperModel: whisperModelSelect,
       reloadModelBtn: reloadBtn,
@@ -967,6 +997,9 @@ window.Components.AiSettingsView = function () {
       beModel: briefExtractor.input,
       beModelTestBtn: briefExtractor.testBtn,
       beModelStatus: briefExtractor.status,
+      maModel: musicAnalyzer.input,
+      maModelTestBtn: musicAnalyzer.testBtn,
+      maModelStatus: musicAnalyzer.status,
       replizAccessKey: replizAccessKey,
       replizSecretKey: replizSecretKey,
       replizTestBtn: replizTestBtn,

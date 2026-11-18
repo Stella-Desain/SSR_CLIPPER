@@ -158,6 +158,28 @@
   background: var(--card);
 }
 
+/* Chip fields grow with their contents instead of using the single-line input height. */
+.chip-container.input {
+  height: auto;
+  min-width: 0;
+}
+
+.chip-container > .chip {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chip-container > .chip > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.chip-container > .chip > span:last-child {
+  flex-shrink: 0;
+}
+
 .select {
   background-color: #FFFFFF;
   appearance: none;
@@ -444,6 +466,7 @@
 }
 
 .dep-dot.ok { background: var(--success); }
+.dep-dot.warn { background: var(--warning); }
 .dep-dot.err { background: var(--error); }
 
 /* ═══════════════════════════════════════

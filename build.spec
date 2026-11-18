@@ -18,6 +18,7 @@ a = Analysis(
     binaries=[],
     datas=[
         *opencv_data,
+        *collect_data_files('tzdata'),
         ('assets', 'assets'),
         ('web', 'web'),
         ('clipper_core.py', '.'),
@@ -26,6 +27,8 @@ a = Analysis(
         ('utils', 'utils'),
     ],
     hiddenimports=[
+        'tzdata',
+        'tzdata.zoneinfo',
         'webview',
         'openai',
         'cv2',

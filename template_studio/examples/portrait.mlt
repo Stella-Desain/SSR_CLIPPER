@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mlt LC_NUMERIC="C" version="7.41.0">
+  <profile description="SSR Portrait" width="360" height="640" frame_rate_num="30" frame_rate_den="1" progressive="1" sample_aspect_num="1" sample_aspect_den="1" display_aspect_num="9" display_aspect_den="16" colorspace="709" />
+  <producer id="source" in="0" out="89">
+    <property name="mlt_service">avformat</property>
+    <property name="resource">placeholder.mp4</property>
+    <property name="length">90</property>
+    <filter in="0" out="89">
+      <property name="mlt_service">brightness</property>
+      <property name="level">0.8</property>
+    </filter>
+    <filter in="0" out="89">
+      <property name="mlt_service">dynamictext</property>
+      <property name="argument">{{SSR_TITLE}}</property>
+      <property name="geometry">12 20 336 140</property>
+      <property name="family">Arial</property>
+      <property name="size">26</property>
+      <property name="weight">700</property>
+      <property name="fgcolour">#ffffffff</property>
+      <property name="bgcolour">#00000000</property>
+      <property name="outlinecolour">#ff000000</property>
+      <property name="outlinewidth">2</property>
+      <property name="halign">center</property>
+      <property name="valign">center</property>
+    </filter>
+  </producer>
+  <playlist id="source_track" in="0" out="89">
+    <entry producer="source" in="0" out="89" />
+  </playlist>
+  <tractor id="main" in="0" out="89">
+    <track producer="source_track" />
+  </tractor>
+</mlt>

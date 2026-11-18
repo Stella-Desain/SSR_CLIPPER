@@ -29,6 +29,7 @@ const campaignEditView = window.Components.CampaignEditView();
 const homeView = window.Components.HomeView();
 const stockClipView = window.Components.StockClipView();
 const aiView = window.Components.AiSettingsView();
+const templateEditorView = window.Components.TemplateEditorView();
 
 pageContent.appendChild(dashboardView.element);
 pageContent.appendChild(campaignListView.element);
@@ -36,12 +37,12 @@ pageContent.appendChild(campaignEditView.element);
 pageContent.appendChild(homeView.element);
 pageContent.appendChild(stockClipView.element);
 pageContent.appendChild(aiView.element);
+pageContent.appendChild(templateEditorView.element);
 
-const allViews = [dashboardView.element, campaignListView.element, campaignEditView.element, homeView.element, stockClipView.element, aiView.element];
+const allViews = [dashboardView.element, campaignListView.element, campaignEditView.element, homeView.element, stockClipView.element, aiView.element, templateEditorView.element];
 const navItems = shellComp.navItems;
 
 // ── State ──
-let polling = null;
 let providerType = 'ytclip';
 
 // ── Navigation ──
@@ -54,6 +55,10 @@ function setActiveView(name) {
   // Refresh data if view has a refresh method
   if (name === 'dashboard' && dashboardView.refresh) dashboardView.refresh();
   if (name === 'stock-clip' && stockClipView.refresh) stockClipView.refresh();
+  if (name === 'editor' && templateEditorView.refresh) templateEditorView.refresh();
+  else if (templateEditorView.pause) templateEditorView.pause();
+  if (name === 'create-clip' && homeView.refresh) homeView.refresh();
+  else if (homeView.pause) homeView.pause();
 }
 
 navItems.forEach(item => {
@@ -137,355 +142,245 @@ function setSelectOptions(select, models, preferred) {
   }
 }
 
-// ── Processing Controls ──
-function lockControls(state) {
-  homeView.fields.url.disabled = state;
-  homeView.fields.clips.disabled = state;
-  homeView.fields.subtitle.disabled = state;
-  if (homeView.fields.subtitleStyle) homeView.fields.subtitleStyle.disabled = state;
-  homeView.fields.highlight.disabled = state;
-  homeView.fields.captions.disabled = state;
-  homeView.fields.hook.disabled = state;
-  homeView.fields.ytTitle.disabled = state;
-  homeView.fields.start.disabled = state;
-  if (state) {
-    homeView.fields.start.style.opacity = '0.5';
-    homeView.fields.start.style.cursor = 'not-allowed';
-  } else {
-    homeView.fields.start.style.opacity = '1';
-    homeView.fields.start.style.cursor = 'pointer';
-  }
+// ── Create Clip: queued jobs and per-source progress ──
+let createEnqueuePending = false;
+let createJobsTimer = null;
+let createJobsRequest = null;
+let createJobs = [];
+let selectedCreateJob = null;
+const createJobRows = new Map();
+const createJobLabels = {
+  queued:'Antrean', running:'Berjalan', completed:'Selesai', partial:'Sebagian gagal',
+  failed:'Gagal', interrupted:'Terhenti', cancelled:'Dibatalkan', cancelling:'Membatalkan', paused:'Dijeda',
+};
+const createNode = (tag, text, className) => {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+};
+function createJobsVisible() {
+  return homeView.element.classList.contains('active') && !document.hidden;
 }
-
-function updateStepStatus(status) {
-  const statusLower = (status || '').toLowerCase();
-  function setStep(el, cls, text) {
-    if (!el) return;
-    const span = el.querySelector('.step-status');
-    if (span) { span.className = 'step-status ' + cls; span.textContent = text; }
-  }
-  // Preparing step: mark as ongoing during download/highlight, done when clips start
-  if (statusLower.includes('download') || statusLower.includes('subtitle') || statusLower.includes('transcrib') || statusLower.includes('highlight') || statusLower.includes('finding') || statusLower.includes('checking') || statusLower.includes('segment')) {
-    setStep(homeView.fields.stepPreparing, 'ongoing', 'Ongoing');
-  } else if (statusLower.includes('clip') || statusLower.includes('process') || statusLower.includes('portrait') || statusLower.includes('caption') || statusLower.includes('hook') || statusLower.includes('complete')) {
-    setStep(homeView.fields.stepPreparing, 'complete', 'Done');
-  } else if (statusLower.startsWith('error')) {
-    setStep(homeView.fields.stepPreparing, 'failed', 'Failed');
-  }
+function createJobTitle(job) {
+  return job.title || job.source_title || String(job.source || '').split(/[\\/]/).filter(Boolean).pop() || 'Sumber video';
 }
-
-// ── Terminal State ──
-let termDotInterval = null;   // animated dots timer
-let termDotCount = 0;
-let termErrorLines = [];      // accumulated error strings
-let termCurrentLine = null;   // DOM span for current status
-let termErrorBlock = null;    // DOM div for error section
-let termLastStatus = '';      // track last status to detect new lines
-
-function termInit() {
-  termErrorLines = [];
-  termCurrentLine = null;
-  termErrorBlock = null;
-  termLastStatus = '';
-  homeView.fields.terminal.innerHTML = '';
-
-  // Current-status line
-  termCurrentLine = document.createElement('span');
-  termCurrentLine.style.color = 'rgba(255,255,255,0.85)';
-  homeView.fields.terminal.appendChild(termCurrentLine);
-
-  termStartDots('Processing running');
-
-  // Reset clip progress UI
-  if (homeView.fields.inProgressList) homeView.fields.inProgressList.innerHTML = '';
-  if (homeView.fields.waitingList) homeView.fields.waitingList.innerHTML = '';
-  if (homeView.fields.errorLogBox) homeView.fields.errorLogBox.innerHTML = '';
-  if (homeView.fields.progressCount) homeView.fields.progressCount.textContent = '0/0';
-  if (homeView.fields.inProgressBadge) homeView.fields.inProgressBadge.textContent = '0';
-  if (homeView.fields.waitingBadge) homeView.fields.waitingBadge.textContent = '0';
-  if (homeView.fields.errorBadge) homeView.fields.errorBadge.textContent = '0';
-  // Reset preparing step
-  const prepSpan = homeView.fields.stepPreparing ? homeView.fields.stepPreparing.querySelector('.step-status') : null;
-  if (prepSpan) { prepSpan.className = 'step-status'; prepSpan.textContent = 'Waiting'; }
+function createJobCounts(job) {
+  const clips = Array.isArray(job.clips) ? job.clips : [];
+  const counts = job.counts || {};
+  return {
+    planned: counts.planned ?? clips.length,
+    completed: counts.completed ?? clips.filter(clip => clip.status === 'done').length,
+    failed: counts.failed ?? clips.filter(clip => clip.status === 'error').length,
+    cancelled: counts.cancelled ?? clips.filter(clip => clip.status === 'cancelled').length,
+    requested: counts.requested ?? (job.options?.clip_mode === 'ai' ? null : job.options?.num_clips),
+  };
 }
-
-function termStartDots(prefix) {
-  if (termDotInterval) clearInterval(termDotInterval);
-  termDotCount = 0;
-  termDotInterval = setInterval(() => {
-    termDotCount = (termDotCount % 3) + 1;
-    if (termCurrentLine) {
-      termCurrentLine.textContent = prefix + '.'.repeat(termDotCount);
+function createJobCountLabel(job) {
+  const counts = createJobCounts(job);
+  if (counts.planned > 0) return `${counts.completed}/${counts.planned} clip selesai`;
+  if (job.status === 'queued') return counts.requested ? `Target ${counts.requested} clip` : 'Jumlah ditentukan AI';
+  if (job.status === 'running') return 'Menganalisis sumber';
+  return `${counts.completed} clip selesai`;
+}
+function selectCreateJob(id) {
+  selectedCreateJob = selectedCreateJob === id ? null : id;
+  renderCreateJobs();
+}
+function renderCreateJobs() {
+  const fields = homeView.fields;
+  const ids = new Set(createJobs.map(job => job.id));
+  for (const [id, row] of createJobRows) {
+    if (!ids.has(id)) { row.button.remove(); createJobRows.delete(id); }
+  }
+  fields.jobsEmpty.hidden = createJobs.length > 0;
+  for (const [position, job] of createJobs.entries()) {
+    let row = createJobRows.get(job.id);
+    if (!row) {
+      const button = createNode('button', undefined, 'create-job-row');
+      button.type = 'button';
+      button.setAttribute('aria-controls', 'create-job-details');
+      const info = createNode('span', undefined, 'create-job-row-info');
+      const title = createNode('strong');
+      const meta = createNode('span', undefined, 'create-job-row-meta');
+      const status = createNode('span');
+      info.append(title, meta);
+      button.append(info, status);
+      button.addEventListener('click', () => selectCreateJob(job.id));
+      row = {button, title, meta, status};
+      createJobRows.set(job.id, row);
+      fields.jobsList.appendChild(button);
     }
-  }, 400);
-}
-
-function termStopDots() {
-  if (termDotInterval) {
-    clearInterval(termDotInterval);
-    termDotInterval = null;
-  }
-}
-
-function termSetLine(text, color) {
-  termStopDots();
-  if (termCurrentLine) {
-    termCurrentLine.textContent = text;
-    termCurrentLine.style.color = color || 'rgba(255,255,255,0.85)';
-  }
-  homeView.fields.terminal.scrollTop = homeView.fields.terminal.scrollHeight;
-}
-
-function termAddError(errText) {
-  // Build error block if first error
-  if (!termErrorBlock) {
-    const divider = document.createElement('div');
-    divider.style.cssText = 'margin:10px 0 6px; border-top:1px solid rgba(255,255,255,0.15); padding-top:8px; color:rgba(255,100,100,0.8); font-size:11px;';
-    divider.textContent = '──────────────────────── Error Log ────────────────────────';
-    homeView.fields.terminal.appendChild(divider);
-
-    termErrorBlock = document.createElement('div');
-    termErrorBlock.style.cssText = 'color: rgba(255,100,100,0.9); font-size:11px; white-space:pre-wrap; word-break:break-all; margin-top:4px;';
-    homeView.fields.terminal.appendChild(termErrorBlock);
-  }
-  termErrorLines.push(errText);
-  termErrorBlock.textContent = termErrorLines.join('\n');
-  homeView.fields.terminal.scrollTop = homeView.fields.terminal.scrollHeight;
-}
-
-function termFinish(isError) {
-  termStopDots();
-  if (isError) {
-    if (homeView.fields.termLabel) homeView.fields.termLabel.textContent = 'Error';
-    termCurrentLine.style.color = 'rgba(255,100,100,0.9)';
-  } else {
-    if (homeView.fields.termLabel) homeView.fields.termLabel.textContent = 'Done';
-    termCurrentLine.style.color = '#a3ff33';
-  }
-}
-
-// ── Processing Controls ─────────────────────────────────────────
-async function start() {
-  const url = homeView.fields.url.value.trim();
-  if (!url) return;
-  lockControls(true);
-  if (homeView.fields.termLabel) homeView.fields.termLabel.textContent = 'Running';
-  homeView.fields.status.textContent = 'Starting...';
-  homeView.fields.bar.style.width = '0%';
-  termInit();
-
-  try {
-    const res = await window.pywebview.api.start_processing(
-      url,
-      parseInt(homeView.fields.clips.value, 10),
-      homeView.fields.captions.checked,
-      homeView.fields.hook.checked,
-      homeView.fields.subtitle.value,
-      homeView.fields.portrait.checked,
-      homeView.fields.highlight.checked,
-      homeView.fields.ytTitle.checked,
-      homeView.fields.campaign ? homeView.fields.campaign.value : "",
-      homeView.fields.subtitleStyle ? homeView.fields.subtitleStyle.value : "v2",
-      homeView.fields.clipMode ? homeView.fields.clipMode() : "fixed"
-    );
-    if (res && res.status === 'started') {
-      poll();
-      polling = setInterval(poll, 500);
-    } else {
-      homeView.fields.status.textContent = 'Busy - another process is running';
-      termSetLine('Another process is already running.', 'rgba(255,200,50,0.9)');
-      if (homeView.fields.termLabel) homeView.fields.termLabel.textContent = 'Busy';
-      lockControls(false);
+    if (fields.jobsList.children[position] !== row.button) {
+      fields.jobsList.insertBefore(row.button, fields.jobsList.children[position] || null);
     }
-  } catch (e) {
-    homeView.fields.status.textContent = 'Error: ' + e;
-    termAddError(String(e));
-    termFinish(true);
-    lockControls(false);
+    row.title.textContent = createJobTitle(job);
+    row.meta.textContent = `${job.campaign?.name || job.campaign_id || 'Campaign'} · ${createJobCountLabel(job)}`;
+    row.status.className = 'wf-badge wf-' + job.status;
+    row.status.textContent = (createJobLabels[job.status] || job.status) + (job.queue_position ? ` #${job.queue_position}` : '');
+    row.button.setAttribute('aria-expanded', String(job.id === selectedCreateJob));
   }
+  const selected = createJobs.find(job => job.id === selectedCreateJob);
+  fields.progressPanel.hidden = !selected;
+  if (selected) renderCreateJobDetails(selected);
 }
-
-// ── Clip Card Rendering ──
-function renderClipCard(clip, isRunning) {
-  const card = document.createElement('div');
-  card.style.cssText = 'padding:10px 12px;border:1px solid var(--border-light);border-radius:8px;background:var(--bg);' + (isRunning ? 'border-left:3px solid var(--success);' : '');
-
-  const row1 = document.createElement('div');
-  row1.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;';
-  const title = document.createElement('span');
-  title.style.cssText = 'font-size:12px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-  title.textContent = clip.title || 'Untitled';
-  const score = document.createElement('span');
-  score.style.cssText = 'font-size:10px;font-weight:700;background:rgba(163,255,51,0.15);color:#3d6b10;padding:2px 8px;border-radius:10px;white-space:nowrap;';
-  score.textContent = clip.virality_score != null ? clip.virality_score.toFixed(1) : '?';
-  row1.appendChild(title);
-  row1.appendChild(score);
-  card.appendChild(row1);
-
-  const row2 = document.createElement('div');
-  row2.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-top:4px;';
-  const time = document.createElement('span');
-  time.style.cssText = 'font-size:10px;color:var(--text-muted);';
-  time.textContent = (clip.start_time || '?') + ' - ' + (clip.end_time || '?');
-  const step = document.createElement('span');
-  step.style.cssText = 'font-size:10px;color:' + (isRunning ? 'var(--success)' : 'var(--text-muted)') + ';';
-  step.textContent = isRunning ? (clip.step || 'Processing') : 'Queued';
-  row2.appendChild(time);
-  row2.appendChild(step);
-  card.appendChild(row2);
-
-  if (isRunning && clip.step_progress != null) {
-    const barTrack = document.createElement('div');
-    barTrack.style.cssText = 'height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:6px;';
-    const barFill = document.createElement('div');
-    barFill.style.cssText = 'height:100%;background:var(--success);transition:width 0.3s ease;width:' + Math.min(100, (clip.step_progress * 100)).toFixed(0) + '%;';
-    barTrack.appendChild(barFill);
-    card.appendChild(barTrack);
+function renderCreateClip(clip) {
+  const card = createNode('div', undefined, 'create-job-clip');
+  card.append(createNode('strong', clip.title || `Clip ${clip.index || ''}`));
+  const states = {waiting:'Menunggu', queued:'Menunggu', running:'Berjalan', processing:'Berjalan', done:'Selesai', error:'Gagal', cancelled:'Dibatalkan'};
+  card.append(createNode('p', clip.error || clip.step || states[clip.status] || clip.status));
+  if (!['done','error','cancelled','waiting','queued'].includes(clip.status) && Number.isFinite(clip.step_progress)) {
+    const meter = createNode('progress');
+    meter.max = 1;
+    meter.value = Math.max(0, Math.min(1, clip.step_progress));
+    meter.setAttribute('aria-label', `Progress ${clip.title || 'clip'}`);
+    card.appendChild(meter);
   }
-
   return card;
 }
-
-function renderErrorCard(clip) {
-  const card = document.createElement('div');
-  card.style.cssText = 'padding:8px 12px;background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.15);border-radius:8px;font-size:11px;color:var(--error);';
-  card.textContent = 'Clip ' + clip.index + ' - "' + (clip.title || '?') + '": ' + (clip.error || 'Unknown error');
-  return card;
-}
-
-function renderClipsUI(clips) {
-  if (!clips || clips.length === 0) return;
-
-  const running = clips.filter(c => c.status === 'running').sort((a,b) => a.index - b.index);
-  const waiting = clips.filter(c => c.status === 'waiting').sort((a,b) => a.index - b.index);
-  const errors = clips.filter(c => c.status === 'error').sort((a,b) => a.index - b.index);
-  const done = clips.filter(c => c.status === 'done').length;
-
-  // Update counter
-  if (homeView.fields.progressCount) {
-    homeView.fields.progressCount.textContent = done + '/' + clips.length;
+function renderCreateJobDetails(job) {
+  const fields = homeView.fields;
+  const clips = Array.isArray(job.clips) ? job.clips : [];
+  const counts = createJobCounts(job);
+  fields.selectedTitle.textContent = createJobTitle(job);
+  fields.selectedMeta.textContent = `${job.campaign?.name || job.campaign_id || 'Campaign'} · ${createJobLabels[job.status] || job.status}`;
+  fields.selectedCounts.textContent = [createJobCountLabel(job), counts.failed ? `${counts.failed} gagal` : '', counts.cancelled ? `${counts.cancelled} dibatalkan` : ''].filter(Boolean).join(' · ');
+  fields.progressCount.textContent = counts.planned ? `${counts.completed}/${counts.planned}` : '—';
+  const progress = Number(job.progress);
+  fields.bar.style.width = `${Math.round((Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0) * 100)}%`;
+  fields.status.textContent = job.error || job.step || (job.queue_position ? `Menunggu giliran #${job.queue_position}` : createJobLabels[job.status]) || '';
+  const preparing = fields.stepPreparing.querySelector('.step-status');
+  if (preparing) {
+    const done = clips.length > 0 || job.status === 'completed';
+    preparing.className = 'step-status ' + (done ? 'complete' : job.status === 'running' ? 'ongoing' : ['failed','interrupted'].includes(job.status) ? 'failed' : '');
+    preparing.textContent = done ? 'Selesai' : job.status === 'running' ? 'Berjalan' : ['failed','interrupted'].includes(job.status) ? 'Terhenti' : 'Menunggu';
   }
-
-  // In progress
-  homeView.fields.inProgressList.innerHTML = '';
-  running.forEach(c => homeView.fields.inProgressList.appendChild(renderClipCard(c, true)));
-  if (homeView.fields.inProgressBadge) homeView.fields.inProgressBadge.textContent = running.length;
-
-  // Waiting
-  homeView.fields.waitingList.innerHTML = '';
-  waiting.forEach(c => homeView.fields.waitingList.appendChild(renderClipCard(c, false)));
-  if (homeView.fields.waitingBadge) homeView.fields.waitingBadge.textContent = waiting.length;
-
-  // Errors
-  homeView.fields.errorLogBox.innerHTML = '';
-  errors.forEach(c => homeView.fields.errorLogBox.appendChild(renderErrorCard(c)));
-  if (homeView.fields.errorBadge) homeView.fields.errorBadge.textContent = errors.length;
+  const waiting = clips.filter(clip => ['waiting','queued'].includes(clip.status));
+  const running = clips.filter(clip => !['waiting','queued','done','error','cancelled'].includes(clip.status));
+  const errors = clips.filter(clip => clip.status === 'error');
+  fields.inProgressList.replaceChildren(...running.map(renderCreateClip));
+  fields.waitingList.replaceChildren(...waiting.map(renderCreateClip));
+  fields.errorLogBox.replaceChildren(...errors.map(renderCreateClip));
+  if (job.error && !errors.some(clip => clip.error === job.error)) fields.errorLogBox.append(createNode('p', job.error, 'wf-error'));
+  fields.inProgressBadge.textContent = String(running.length);
+  fields.waitingBadge.textContent = String(waiting.length);
+  fields.errorBadge.textContent = String(errors.length || (job.error ? 1 : 0));
+  fields.termLabel.textContent = 'Log pekerjaan';
+  const logs = Array.isArray(job.logs) ? job.logs : [];
+  const logText = logs.map(entry => typeof entry === 'string' ? entry : [entry.timestamp, entry.message].filter(Boolean).join(' · ')).join('\n');
+  const terminalText = logText || job.error || job.step || (job.status === 'queued' ? 'Pekerjaan menunggu giliran.' : 'Belum ada log tersimpan untuk pekerjaan ini.');
+  if (fields.terminal.textContent !== terminalText) {
+    const nearBottom = fields.terminal.scrollHeight - fields.terminal.scrollTop - fields.terminal.clientHeight < 32;
+    fields.terminal.textContent = terminalText;
+    if (nearBottom) fields.terminal.scrollTop = fields.terminal.scrollHeight;
+  }
 }
-
-async function poll() {
-  try {
-    const p = await window.pywebview.api.get_progress();
-    const pr = Math.max(0, Math.min(1, p.progress || 0));
-    const status = p.status || '';
-    homeView.fields.bar.style.width = (pr * 100).toFixed(1) + '%';
-    homeView.fields.status.textContent = status;
-
-    if (status !== termLastStatus) {
-      termLastStatus = status;
-      const sl = status.toLowerCase();
-
-      if (sl.startsWith('error')) {
-        // Error: push to error block, stop dots
-        termSetLine(status, 'rgba(255,100,100,0.9)');
-        termAddError(status);
-      } else if (
-        sl.includes('download') ||
-        sl.includes('mb/') ||
-        sl.includes('kb/') ||
-        sl.includes('gb/')
-      ) {
-        // Download progress — replace current line, no dots
-        termStopDots();
-        termSetLine(status);
-        if (homeView.fields.termLabel) homeView.fields.termLabel.textContent = 'Downloading';
-      } else if (sl === 'complete' || sl === 'running' || sl === '') {
-        // Generic running state — animated dots
-        if (!termDotInterval) termStartDots('Processing running');
-      } else {
-        // Any other descriptive status (highlight, editing…) — show as-is, replace
-        termStopDots();
-        termSetLine(status);
-      }
-    } else if (
-      // Keep refreshing download lines even if status string changed only in bytes
-      (status.toLowerCase().includes('mb/') ||
-       status.toLowerCase().includes('kb/') ||
-       status.toLowerCase().includes('gb/'))
-    ) {
-      termSetLine(status);
-    }
-
-    updateStepStatus(status);
-
-    // Poll per-clip status
+async function refreshCreateJobs() {
+  if (createJobsRequest) return createJobsRequest;
+  clearTimeout(createJobsTimer);
+  if (!window.pywebview?.api) return;
+  homeView.fields.refreshJobsBtn.disabled = true;
+  createJobsRequest = Promise.resolve().then(async () => {
     try {
-      const cs = await window.pywebview.api.get_clips_status();
-      if (cs && cs.clips) renderClipsUI(cs.clips);
-    } catch {}
-
-    if (status && (status.startsWith('error') || status === 'complete')) {
-      clearInterval(polling);
-      polling = null;
-      termFinish(status.startsWith('error'));
-      lockControls(false);
+      const result = await window.pywebview.api.get_workflow_jobs();
+      if (result.status !== 'ok') throw Error(result.message || 'Pekerjaan belum dapat dimuat.');
+      createJobs = Array.isArray(result.jobs) ? result.jobs : [];
+      homeView.fields.jobsFeedback.textContent = result.worker_note || '';
+      homeView.fields.jobsFeedback.classList.remove('wf-error');
+      renderCreateJobs();
+    } catch (error) {
+      homeView.fields.jobsFeedback.textContent = 'Pekerjaan belum dapat diperbarui: ' + String(error);
+      homeView.fields.jobsFeedback.classList.add('wf-error');
+    } finally {
+      createJobsRequest = null;
+      homeView.fields.refreshJobsBtn.disabled = false;
+      if (createJobsVisible()) createJobsTimer = setTimeout(refreshCreateJobs, 2000);
     }
-  } catch {
-    clearInterval(polling);
-    polling = null;
-    termFinish(true);
-    lockControls(false);
-  }
-}
-
-homeView.fields.start.addEventListener('click', start);
-
-// ── Terminal Copy Button ──
-if (homeView.fields.termCopyBtn) {
-  homeView.fields.termCopyBtn.addEventListener('click', () => {
-    const text = homeView.fields.terminal.textContent || '';
-    navigator.clipboard.writeText(text).then(() => {
-      homeView.fields.termCopyBtn.textContent = 'Copied!';
-      setTimeout(() => { homeView.fields.termCopyBtn.textContent = 'Copy'; }, 1500);
-    }).catch(() => {});
   });
+  return createJobsRequest;
 }
+async function start() {
+  if (createEnqueuePending) return;
+  const fields = homeView.fields;
+  const source = fields.url.value.trim();
+  const campaignId = fields.campaign.value;
+  const clipMode = fields.clipMode();
+  const clipCount = Number(fields.clips.value);
+  fields.formError.textContent = '';
+  if (!source) {
+    fields.formError.textContent = 'Masukkan link atau pilih file video terlebih dahulu.';
+    fields.url.focus();
+    return;
+  }
+  if (!campaignId) {
+    fields.formError.textContent = 'Pilih campaign untuk menggunakan template editing-nya.';
+    fields.campaign.focus();
+    return;
+  }
+  if (clipMode === 'fixed' && (!Number.isSafeInteger(clipCount) || clipCount < 1 || clipCount > 100)) {
+    fields.formError.textContent = 'Jumlah clip harus berupa bilangan bulat antara 1 dan 100.';
+    fields.clips.focus();
+    return;
+  }
+  createEnqueuePending = true;
+  fields.setLocked(true);
+  fields.start.textContent = 'Menambahkan pekerjaan…';
+  try {
+    const result = await window.pywebview.api.enqueue_sources(
+      source.split(/\r?\n/).map(value => value.trim()).filter(Boolean),
+      campaignId,
+      {num_clips:clipMode === 'ai' ? 0 : clipCount, clip_mode:clipMode}
+    );
+    if (result?.status !== 'started') throw Error(result?.message || 'Pekerjaan belum dapat ditambahkan.');
+    fields.url.value = '';
+    fields.sourceFeedback.textContent = `${result.jobs?.length || 1} pekerjaan ditambahkan. Anda dapat menambahkan sumber berikutnya.`;
+  } catch (error) {
+    fields.formError.textContent = String(error);
+  } finally {
+    createEnqueuePending = false;
+    fields.setLocked(false);
+    fields.start.textContent = 'Create Clip';
+  }
+  // Wait for any older snapshot before fetching the newly added job list.
+  if (createJobsRequest) await createJobsRequest;
+  await refreshCreateJobs();
+}
+homeView.fields.start.addEventListener('click', start);
+homeView.fields.refreshJobsBtn.addEventListener('click', refreshCreateJobs);
+homeView.refresh = refreshCreateJobs;
+homeView.pause = () => clearTimeout(createJobsTimer);
+document.addEventListener('visibilitychange', () => {
+  if (createJobsVisible()) refreshCreateJobs();
+  else homeView.pause();
+});
+homeView.fields.termCopyBtn.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(homeView.fields.terminal.textContent || '');
+    homeView.fields.termCopyBtn.textContent = 'Tersalin';
+    setTimeout(() => { homeView.fields.termCopyBtn.textContent = 'Copy'; }, 1500);
+  } catch {
+    homeView.fields.jobsFeedback.textContent = 'Log belum dapat disalin ke clipboard.';
+  }
+});
 
 // ── Install All Button ──
 const installBtn = aiView.element.querySelector('.btn-lime');
 if (installBtn) {
   installBtn.addEventListener('click', async () => {
+    if (installBtn.disabled) return;
+    dependencyInstallAllPending = true;
     installBtn.disabled = true;
-    installBtn.textContent = 'Installing...';
+    installBtn.textContent = 'Starting...';
     try {
-      await window.pywebview.api.install_dependencies();
-      installBtn.textContent = 'Installing (bg)...';
-
-      const maxAttempts = 40; // 40 x 3s = 2 menit
-      let attempts = 0;
-      const poll = setInterval(async () => {
-        attempts++;
-        await loadDepStatus();
-        const deps = await window.pywebview.api.check_dependencies();
-        const allOk = deps.ffmpeg && deps.deno && deps.whisper && deps.ytdlp;
-        if (allOk || attempts >= maxAttempts) {
-          clearInterval(poll);
-          installBtn.disabled = false;
-          installBtn.textContent = 'Install All';
-        }
-      }, 3000);
-    } catch(e) {
-      installBtn.textContent = 'Error';
-      installBtn.disabled = false;
+      const result = await window.pywebview.api.install_dependencies();
+      if (result.status === 'error') throw new Error(result.message || 'Installation failed');
+      dependencyFeedback('');
+    } catch (error) {
+      dependencyFeedback(error.message || String(error));
+    } finally {
+      dependencyInstallAllPending = false;
+      await loadDepStatus();
+      scheduleDependencyPoll();
     }
   });
 }
@@ -546,7 +441,8 @@ async function persistAiSettings() {
       return {
           base_url: targetUrl,
           api_key: targetKey,
-          model: model
+          model: model,
+          ...(model.toLowerCase().includes('codex')?{reasoning_effort:'xhigh'}:{})
       };
   };
 
@@ -567,6 +463,7 @@ async function persistAiSettings() {
     _provider_type: "custom",
     provider_type: "custom",
     highlight_finder: getSmartPayload(aiView.fields.hfUrl, aiView.fields.hfKey, aiView.fields.hfModel),
+    music_analyzer: getSmartPayload(null, null, aiView.fields.maModel),
     caption_maker: captionMakerPayload,
     hook_maker: getSmartPayload(aiView.fields.hmUrl, aiView.fields.hmKey, aiView.fields.hmModel),
     brief_extractor: getSmartPayload(aiView.fields.c3Url, aiView.fields.c3Key, aiView.fields.beModel),
@@ -620,17 +517,23 @@ async function persistAiSettings() {
   aiView.fields.status.textContent = 'Saving...';
   try {
     const odPath = aiView.fields.odPath ? aiView.fields.odPath.value.trim() : '';
-    const savePromises = [
-      window.pywebview.api.save_ai_settings(payload),
-      window.pywebview.api.save_watermark_settings(wmPayload),
-      window.pywebview.api.save_credit_watermark_settings(cwPayload),
-      window.pywebview.api.save_hook_style_settings(hsPayload),
-      window.pywebview.api.save_face_tracking_settings(ftPayload),
+    const saveActions = [
+      () => window.pywebview.api.save_ai_settings(payload),
+      () => window.pywebview.api.save_watermark_settings(wmPayload),
+      () => window.pywebview.api.save_credit_watermark_settings(cwPayload),
+      () => window.pywebview.api.save_hook_style_settings(hsPayload),
+      () => window.pywebview.api.save_face_tracking_settings(ftPayload),
     ];
+    if(!aiView.fields.timezoneSelect.disabled)saveActions.push(async()=>{
+      const result=await window.pywebview.api.save_scheduling_settings({timezone:aiView.fields.timezoneSelect.value});
+      if(result.status==='ok')window.SSRTime.configure(result.timezone);
+      return result;
+    });
     // Only save output dir if user actually set a path
-    if (odPath) savePromises.push(window.pywebview.api.save_output_dir_settings(odPayload));
+    if (odPath) saveActions.push(() => window.pywebview.api.save_output_dir_settings(odPayload));
     
-    const results = await Promise.all(savePromises);
+    const results = [];
+    for (const save of saveActions) results.push(await save());
     const allOk = results.every(r => r && (r.status === 'ok' || r.status === 'saved'));
     if (!allOk) {
       const errorMsg = results.map(r => r && r.message ? r.message : '').find(m => m) || 'Error saving some settings';
@@ -765,6 +668,8 @@ async function validateAndLoad(kind) {
       };
 
       const hfModels = allModels.filter(isChat);
+      if (aiView.fields.maModel) setSelectOptions(aiView.fields.maModel,
+        allModels.filter(m=>!m.startsWith('[Local]')&&!isTTS(m)), aiView.fields.maModel.value);
       const cmModels = allModels.filter(isSTT);
       const hmModels = allModels.filter(isTTS);
       const ytModels = allModels.filter(isChat);
@@ -772,22 +677,18 @@ async function validateAndLoad(kind) {
       if (aiView.fields.hfModel) {
         const pref = aiView.fields.hfModel.value;
         setSelectOptions(aiView.fields.hfModel, hfModels, pref);
-        if (homeView.fields.highlightSub) setSelectOptions(homeView.fields.highlightSub, hfModels, pref);
       }
       if (aiView.fields.cmModel) {
         const pref = aiView.fields.cmModel.value;
         setSelectOptions(aiView.fields.cmModel, cmModels, pref);
-        if (homeView.fields.captionSub) setSelectOptions(homeView.fields.captionSub, cmModels, pref);
       }
       if (aiView.fields.hmModel) {
         const pref = aiView.fields.hmModel.value;
         setSelectOptions(aiView.fields.hmModel, hmModels, pref);
-        if (homeView.fields.hookSub) setSelectOptions(homeView.fields.hookSub, hmModels, pref);
       }
       if (aiView.fields.ytModel) {
         const pref = aiView.fields.ytModel.value;
         setSelectOptions(aiView.fields.ytModel, ytModels, pref);
-        if (homeView.fields.ytTitleSub) setSelectOptions(homeView.fields.ytTitleSub, ytModels, pref);
       }
       // Brief Extractor model — pakai chat models, sama seperti hfModel/ytModel
       if (aiView.fields.beModel) {
@@ -806,28 +707,10 @@ async function validateAndLoad(kind) {
 
 // ── Setup Provider Field Mappings ──
 
-// ── Setup Home Select Synchronization ──
-function syncHomeSelect(homeSel, aiSel) {
-  if (!homeSel || !aiSel) return;
-  homeSel.addEventListener('change', () => {
-    aiSel.value = homeSel.value;
-    if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
-  });
-  aiSel.addEventListener('change', () => {
-    homeSel.value = aiSel.value;
-    if (aiView.fields.saveBtn) aiView.fields.saveBtn.click();
-  });
-}
-syncHomeSelect(homeView.fields.highlightSub, aiView.fields.hfModel);
-syncHomeSelect(homeView.fields.captionSub, aiView.fields.cmModel);
-syncHomeSelect(homeView.fields.hookSub, aiView.fields.hmModel);
-syncHomeSelect(homeView.fields.ytTitleSub, aiView.fields.ytModel);
-
 aiView.fields.hfValidateBtn.addEventListener('click', () => validateAndLoad({
   url: aiView.fields.hfUrl,
   key: aiView.fields.hfKey,
   modelSelect: aiView.fields.hfModel,
-  homeSelect: homeView.fields.highlightSub,
   status: aiView.fields.hfValidateStatus
 }));
 
@@ -835,7 +718,6 @@ aiView.fields.cmValidateBtn.addEventListener('click', () => validateAndLoad({
   url: aiView.fields.cmUrl,
   key: aiView.fields.cmKey,
   modelSelect: aiView.fields.cmModel,
-  homeSelect: homeView.fields.captionSub,
   status: aiView.fields.cmValidateStatus
 }));
 
@@ -844,7 +726,6 @@ if (aiView.fields.hmValidateBtn) {
     url: { value: GEMINI_BASE_URL },
     key: aiView.fields.hmKey,
     modelSelect: aiView.fields.hmModel,
-    homeSelect: homeView.fields.hookSub,
     status: aiView.fields.hmValidateStatus
   }));
 }
@@ -854,7 +735,6 @@ if (aiView.fields.cpValidateBtn) {
     url: aiView.fields.cpUrl,
     key: aiView.fields.cpKey,
     modelSelect: aiView.fields.ytModel,
-    homeSelect: homeView.fields.ytTitleSub,
     status: aiView.fields.cpValidateStatus
   }));
 }
@@ -933,7 +813,9 @@ async function testModelReadiness(modelField, testBtn, statusSpan) {
 
   try {
       const payload = resolveModelPayloadForTest(modelField);
-      const res = await window.pywebview.api.test_model(payload.base_url, payload.api_key, payload.model, payload.model_type);
+      const res = modelField===aiView.fields.maModel
+        ? await window.pywebview.api.test_music_audio_model(payload)
+        : await window.pywebview.api.test_model(payload.base_url, payload.api_key, payload.model, payload.model_type);
       if (res && res.status === 'ok') {
           statusSpan.textContent = res.message;
           statusSpan.style.color = 'var(--success)';
@@ -970,6 +852,8 @@ if (aiView.fields.beModelTestBtn) {
   aiView.fields.beModelTestBtn.addEventListener('click', () =>
     testModelReadiness(aiView.fields.beModel, aiView.fields.beModelTestBtn, aiView.fields.beModelStatus));
 }
+if (aiView.fields.maModelTestBtn) aiView.fields.maModelTestBtn.addEventListener('click',()=>
+  testModelReadiness(aiView.fields.maModel,aiView.fields.maModelTestBtn,aiView.fields.maModelStatus));
 
 async function loadReplizData() {
     try {
@@ -1038,6 +922,15 @@ async function init() {
   await waitForApi();
   if (!window.pywebview || !window.pywebview.api) return;
 
+  try{
+    const time=await window.pywebview.api.get_scheduling_settings();
+    if(time.status!=='ok')throw Error(time.message);
+    window.SSRTime.configure(time.timezone);
+    const select=aiView.fields.timezoneSelect;
+    if(![...select.options].some(option=>option.value===time.timezone))select.add(new Option(time.timezone,time.timezone));
+    select.value=time.timezone;select.disabled=false;
+  }catch(error){aiView.fields.status.textContent='Zona waktu belum dimuat: '+error;}
+
   // Load AI settings
   try {
     const ai = await window.pywebview.api.get_ai_settings();
@@ -1055,6 +948,10 @@ async function init() {
     if (aiView.fields.hmModel) setSelectOptions(aiView.fields.hmModel, [hm.model].filter(Boolean), hm.model || '');
     
     const cp = (ai && ai.custom_provider) || {};
+    const ma = (ai && ai.music_analyzer) || {};
+    const maName=ma.model || 'Visual-AI';
+    const maDisplay=(!ma.base_url||ma.base_url===cp.base_url)?'[Custom2] '+maName:maName;
+    if (aiView.fields.maModel) setSelectOptions(aiView.fields.maModel,[maDisplay],maDisplay);
     const c3 = (ai && ai.custom_provider_3) || {};
     const yt = (ai && ai.yt_title_maker) || {};
     const be = (ai && ai.brief_extractor) || {};
@@ -1069,11 +966,6 @@ async function init() {
     if (aiView.fields.replizAccessKey) aiView.fields.replizAccessKey.value = rep.access_key || '';
     if (aiView.fields.replizSecretKey) aiView.fields.replizSecretKey.value = rep.secret_key || '';
 
-    // Update feature toggle sub-labels in homeView with the loaded model
-    setSelectOptions(homeView.fields.highlightSub, [hf.model].filter(Boolean), hf.model || '');
-    setSelectOptions(homeView.fields.captionSub, [cm.model].filter(Boolean), cm.model || '');
-    setSelectOptions(homeView.fields.hookSub, [hm.model].filter(Boolean), hm.model || '');
-    setSelectOptions(homeView.fields.ytTitleSub, [yt.model].filter(Boolean), yt.model || '');
     
     // Load Watermark Settings
     const wm = await window.pywebview.api.get_watermark_settings();
@@ -1161,20 +1053,154 @@ async function init() {
   window._initDone = true;
 }
 
-// ── Load Dependency Status ──
-async function loadDepStatus() {
-  try {
-    const deps = await window.pywebview.api.check_dependencies();
-    const dots = aiView.element.querySelectorAll('.dep-dot');
-    // Map: yt-dlp, ffmpeg, deno, whisper
-    const depMap = [deps.ytdlp, deps.ffmpeg, deps.deno, deps.whisper];
-    dots.forEach((dot, i) => {
-      const ok = depMap[i];
-      dot.classList.toggle('err', !ok);
-      dot.classList.toggle('ok', !!ok);
-    });
-  } catch(e) { console.warn('Dep status load failed:', e); }
+// ── Dependency status and observable install jobs ──
+const dependencyNames = ['ytdlp', 'ffmpeg', 'deno', 'whisper', 'tzdata'];
+const dependencyPending = new Set();
+let dependencyInstallAllPending = false;
+let dependencyPollTimer = null;
+let dependencyStatusRequest = null;
+let dependencyLastState = null;
+let dependencyRequestError = '';
+
+function dependencyFeedback(message) {
+  dependencyRequestError = message || '';
+  let feedback = aiView.element.querySelector('.dependency-feedback');
+  if (!feedback) {
+    feedback = document.createElement('p');
+    feedback.className = 'dependency-feedback';
+    feedback.setAttribute('role', 'status');
+    feedback.style.cssText = 'font-size:12px;line-height:1.5;margin:8px 0;max-width:680px;overflow-wrap:anywhere';
+    aiView.element.querySelector('.dep-status')?.insertAdjacentElement('afterend', feedback);
+  }
+  feedback.textContent = message || '';
+  feedback.hidden = !message;
 }
+
+function scheduleDependencyPoll() {
+  if (dependencyPollTimer) return;
+  dependencyPollTimer = setTimeout(async () => {
+    dependencyPollTimer = null;
+    await loadDepStatus();
+  }, 2000);
+}
+
+function renderDependencyStatus(deps, status) {
+  const jobs = status.jobs || {};
+  const isActive = job => job && ['queued', 'running'].includes(job.status);
+  const busy = dependencyInstallAllPending || dependencyPending.size > 0 || status.active;
+  const messages = [];
+  dependencyNames.forEach(name => {
+    const info = deps[name] || { installed: false, status: 'not_installed' };
+    const job = jobs[name] || info.job || {};
+    const pending = dependencyPending.has(name) || dependencyInstallAllPending || isActive(job);
+    const item = aiView.element.querySelector(`.dep-item[data-dep="${name}"]`);
+    const btn = item?.querySelector('.dep-action-btn');
+    const dot = item?.querySelector('.dep-dot');
+    const failed = job.status === 'failed';
+    const restart = job.restart_required;
+    const update = info.status === 'update_available';
+    if (dot) {
+      dot.classList.remove('ok', 'warn', 'err');
+      dot.classList.add(pending || update || restart ? 'warn' : failed || !info.installed ? 'err' : 'ok');
+    }
+    if (item) item.title = [info.version && `Version: ${info.version}`, info.latest && `Available: ${info.latest}`, job.error || info.error].filter(Boolean).join(' · ');
+    if (btn) {
+      btn.textContent = pending ? (job.status === 'queued' ? 'Queued...' : 'Installing...')
+        : failed ? 'Retry' : restart ? 'Restart app' : update ? 'Update' : info.installed ? 'Installed' : 'Install';
+      btn.disabled = pending || restart || (info.installed && !update && !failed);
+      btn.style.background = pending ? '#9CA3AF' : failed || !info.installed ? '#EF4444' : update || restart ? '#F59E0B' : '#10B981';
+      btn.style.color = '#fff';
+      btn.style.cursor = btn.disabled ? 'default' : 'pointer';
+      btn.title = job.error || info.error || (restart ? 'Restart aplikasi untuk memuat paket yang baru.' : info.status === 'installed' ? 'Terpasang; versi terbaru belum dapat dipastikan.' : '');
+    }
+    if (failed) messages.push(`${name}: ${job.error || 'Instalasi gagal.'}`);
+    else if (!info.installed && info.error) messages.push(info.error);
+    if (restart) messages.push(`${name}: restart aplikasi untuk memakai versi baru.`);
+  });
+  if (deps.update_check?.status === 'failed') messages.push('Pengecekan versi online gagal. Status instalasi lokal tetap tersedia.');
+  if (dependencyRequestError) messages.push(dependencyRequestError);
+  const previousError = dependencyRequestError;
+  dependencyFeedback(messages.join(' '));
+  dependencyRequestError = previousError;
+
+  if (installBtn) {
+    const needsInstall = dependencyNames.some(name => !deps[name]?.installed);
+    const needsUpdate = dependencyNames.some(name => deps[name]?.status === 'update_available' && !jobs[name]?.restart_required);
+    const failed = dependencyNames.some(name => jobs[name]?.status === 'failed');
+    installBtn.textContent = busy ? 'Installing...' : failed ? 'Retry Failed' : needsInstall ? 'Install All' : needsUpdate ? 'Update All' : 'All Installed';
+    installBtn.disabled = busy || (!needsInstall && !needsUpdate && !failed);
+  }
+  const updatesBtn = aiView.element.querySelector('.dependency-check-updates');
+  if (updatesBtn) {
+    updatesBtn.disabled = busy || deps.update_check?.status === 'running';
+    updatesBtn.textContent = deps.update_check?.status === 'running' ? 'Checking...' : 'Check Updates';
+  }
+  if (busy || deps.update_check?.status === 'running') scheduleDependencyPoll();
+}
+
+async function loadDepStatus() {
+  // Share an in-flight request; setTimeout schedules the next poll after completion.
+  if (dependencyStatusRequest) return dependencyStatusRequest;
+  if (!window.pywebview?.api) return;
+  dependencyStatusRequest = (async () => {
+    try {
+      const deps = await window.pywebview.api.check_dependencies_detailed();
+      const jobs = await window.pywebview.api.get_dependency_install_status();
+      dependencyLastState = { deps, jobs };
+      renderDependencyStatus(deps, jobs);
+      window._depsDone = true;
+    } catch (error) {
+      console.warn('Dep status load failed:', error);
+      dependencyFeedback(`Status dependency belum dapat dibaca: ${error.message || error}`);
+      // Keep controls locked if an acknowledged job is still running.
+      if (dependencyLastState?.jobs.active || dependencyPending.size || dependencyInstallAllPending) scheduleDependencyPoll();
+    } finally {
+      dependencyStatusRequest = null;
+    }
+  })();
+  return dependencyStatusRequest;
+}
+
+if (installBtn) {
+  const updatesBtn = document.createElement('button');
+  updatesBtn.className = 'btn dependency-check-updates';
+  updatesBtn.textContent = 'Check Updates';
+  updatesBtn.style.marginLeft = '8px';
+  installBtn.insertAdjacentElement('afterend', updatesBtn);
+  updatesBtn.addEventListener('click', async () => {
+    updatesBtn.disabled = true;
+    try {
+      await window.pywebview.api.check_dependency_updates();
+      dependencyFeedback('');
+    } catch (error) {
+      dependencyFeedback(error.message || String(error));
+    }
+    await loadDepStatus();
+    scheduleDependencyPoll();
+  });
+}
+
+// ── Per-dependency Install/Update button handlers ──
+document.addEventListener('click', async event => {
+  const btn = event.target.closest('.dep-action-btn');
+  if (!btn || btn.disabled || !window.pywebview?.api) return;
+  const name = btn.dataset.dep;
+  if (!dependencyNames.includes(name)) return;
+  dependencyPending.add(name);
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  try {
+    const result = await window.pywebview.api.install_single_dependency(name);
+    if (result.status === 'error') throw new Error(result.message || 'Installation failed');
+    dependencyFeedback('');
+  } catch (error) {
+    dependencyFeedback(error.message || String(error));
+  } finally {
+    dependencyPending.delete(name);
+    await loadDepStatus();
+    scheduleDependencyPoll();
+  }
+});
 
 window.addEventListener('pywebviewready', init);
 window.addEventListener('pywebviewready', loadDepStatus);

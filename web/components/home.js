@@ -5,274 +5,184 @@ window.Components.HomeView = function () {
   section.className = 'view entrance';
   section.dataset.view = 'create-clip';
 
-  // Page header
   const pageHeader = document.createElement('div');
   pageHeader.style.marginBottom = '28px';
-  pageHeader.innerHTML = `<h1 class="page-title">Create Clip</h1><p class="page-subtitle">An easy way to create clips with care and precision.</p>`;
+  pageHeader.innerHTML = '<h1 class="page-title">Create Clip</h1><p class="page-subtitle">Masukkan sumber video dan pilih campaign untuk mulai membuat clip.</p>';
   section.appendChild(pageHeader);
 
-  // 3-col grid
-  const grid = document.createElement('div');
-  grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;min-height:calc(100vh - 220px);';
+  const layout = document.createElement('div');
+  layout.className = 'create-clip-layout has-progress';
+  const inputs = document.createElement('div');
+  inputs.className = 'card card-body create-clip-inputs';
+  layout.appendChild(inputs);
 
-  // ── Column 1: Configuration ──
-  const col1 = document.createElement('div');
-  col1.style.cssText = 'display:flex;flex-direction:column;gap:16px;';
+  function inputGroup(title, target) {
+    const group = document.createElement('div');
+    group.className = 'create-clip-group';
+    const label = document.createElement('label');
+    label.className = 'field-label';
+    label.htmlFor = target;
+    label.textContent = title;
+    group.appendChild(label);
+    inputs.appendChild(group);
+    return group;
+  }
 
-  const configCard = document.createElement('div');
-  configCard.className = 'card';
-  configCard.style.cssText = 'flex:1;display:flex;flex-direction:column;';
-
-  const configHeader = document.createElement('div');
-  configHeader.className = 'card-header';
-  configHeader.innerHTML = `
-    <h2 class="card-title">Configuration</h2>
-    <button class="btn btn-outline" id="cookies-btn">
-      <svg style="width:14px;height:14px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-      Cookies
-    </button>
-  `;
-  configCard.appendChild(configHeader);
-
-  const configBody = document.createElement('div');
-  configBody.className = 'card-body';
-  configBody.style.cssText = 'flex:1;display:flex;flex-direction:column;';
-
-  // YouTube Link
-  const urlGroup = document.createElement('div');
-  urlGroup.style.marginBottom = '20px';
-  urlGroup.innerHTML = `<label class="field-label" style="display:block;margin-bottom:6px;">Link Youtube</label>`;
+  const urlGroup = inputGroup('Sumber video', 'url');
   const urlRow = document.createElement('div');
-  urlRow.style.cssText = 'display:flex;gap:8px;';
-  const urlInput = document.createElement('input');
+  urlRow.className = 'create-clip-source-row';
+  const urlInput = document.createElement('textarea');
+  urlInput.rows = 4;
   urlInput.className = 'input';
   urlInput.id = 'url';
-  urlInput.type = 'text';
-  urlInput.placeholder = 'https://youtube.com/watch?v=...';
-  urlInput.style.flex = '1';
+  urlInput.placeholder = 'Link YouTube atau file MP4, satu sumber per baris. File juga bisa diseret ke sini.';
+  urlInput.setAttribute('aria-describedby', 'source-feedback');
   const pasteBtn = document.createElement('button');
   pasteBtn.className = 'btn btn-outline';
-  pasteBtn.textContent = 'Paste';
+  pasteBtn.type = 'button';
+  pasteBtn.textContent = 'Tempel';
+  const sourceFeedback = document.createElement('p');
+  sourceFeedback.id = 'source-feedback';
+  sourceFeedback.className = 'create-clip-feedback';
+  sourceFeedback.setAttribute('role', 'status');
   pasteBtn.addEventListener('click', async () => {
+    if (urlInput.disabled) return;
     try {
-      const text = await navigator.clipboard.readText();
-      urlInput.value = text;
-    } catch {}
+      const value = await navigator.clipboard.readText();
+      if (!urlInput.disabled) urlInput.value = value;
+      sourceFeedback.textContent = '';
+    } catch {
+      sourceFeedback.textContent = 'Clipboard belum dapat dibaca. Tempel link langsung ke kolom sumber video.';
+    }
   });
-  urlRow.appendChild(urlInput);
-  urlRow.appendChild(pasteBtn);
-  urlGroup.appendChild(urlRow);
-  configBody.appendChild(urlGroup);
+  urlRow.append(urlInput, pasteBtn);
+  urlGroup.append(urlRow, sourceFeedback);
 
-  // Campaign Dropdown
-  const campGroup = document.createElement('div');
-  campGroup.style.marginBottom = '20px';
-  campGroup.innerHTML = `<label class="field-label" style="display:block;margin-bottom:6px;">Campaign</label>`;
+  const campGroup = inputGroup('Campaign', 'home-campaign-select');
   const campSelect = document.createElement('select');
   campSelect.className = 'select';
   campSelect.id = 'home-campaign-select';
-  campSelect.innerHTML = `<option value="">Tanpa campaign</option>`;
+  campSelect.innerHTML = '<option value="">Pilih campaign</option>';
   campGroup.appendChild(campSelect);
-  configBody.appendChild(campGroup);
 
-  // Features section
-  const optLabel = document.createElement('label');
-  optLabel.className = 'field-label';
-  optLabel.style.cssText = 'display:block;margin-bottom:10px;';
-  optLabel.textContent = 'Features';
-  configBody.appendChild(optLabel);
-
-  const toggles = document.createElement('div');
-  toggles.style.cssText = 'display:flex;flex-direction:column;gap:8px;flex:1;';
-
-  function makeToggle(label, sub, id, checked) {
-    const item = document.createElement('div');
-    item.className = 'toggle-item';
-    const left = document.createElement('div');
-    const labelEl = document.createElement('div');
-    labelEl.className = 'toggle-item-label';
-    labelEl.textContent = label;
-    const subEl = document.createElement('select');
-    subEl.className = 'toggle-item-sub select';
-    subEl.style.cssText = 'background:transparent; border:none; color:var(--text-secondary); padding:0 16px 0 0; height:auto; margin-top:2px; font-size:12px; cursor:pointer; width:100%; outline:none; box-shadow:none;';
-    
-    // Add default option
-    const defOpt = document.createElement('option');
-    defOpt.textContent = sub;
-    subEl.appendChild(defOpt);
-
-    left.appendChild(labelEl);
-    left.appendChild(subEl);
-    const sw = document.createElement('label');
-    sw.className = 'toggle-switch';
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.id = id;
-    input.checked = checked;
-    const slider = document.createElement('span');
-    slider.className = 'toggle-slider';
-    sw.appendChild(input);
-    sw.appendChild(slider);
-    item.appendChild(left);
-    item.appendChild(sw);
-    return { element: item, input, subEl };
-  }
-
-  const portraitToggle  = makeToggle('Portrait Mode',    'Always enabled', 'portrait-mode',    true);
-  const highlightToggle = makeToggle('Highlight Finder', 'Loading...', 'highlight-finder', true);
-  const captionToggle   = makeToggle('Caption Maker',    'Loading...', 'caption-maker',    true);
-  const hookToggle      = makeToggle('Hook Maker',       'Loading...', 'hook-maker',       true);
-  const titleToggle     = makeToggle('YT Title Maker',   'Loading...', 'yt-title-maker',   true);
-
-  // Subtitle Style selector (shown when Caption Maker is ON)
-  const subtitleStyleItem = document.createElement('div');
-  subtitleStyleItem.className = 'toggle-item';
-  subtitleStyleItem.id = 'subtitle-style-container';
-  const styleLeft = document.createElement('div');
-  const styleLabel = document.createElement('div');
-  styleLabel.className = 'toggle-item-label';
-  styleLabel.textContent = 'Subtitle Style';
-  const styleSub = document.createElement('div');
-  styleSub.style.cssText = 'font-size:12px;color:var(--text-secondary);margin-top:2px;';
-  styleSub.textContent = 'Visual style for captions';
-  styleLeft.appendChild(styleLabel);
-  styleLeft.appendChild(styleSub);
-
-  const subtitleStyleSelect = document.createElement('select');
-  subtitleStyleSelect.className = 'select';
-  subtitleStyleSelect.id = 'subtitle-style';
-  subtitleStyleSelect.style.cssText = 'width:auto;min-width:140px;height:32px;font-size:12px;';
-  subtitleStyleSelect.innerHTML = `
-    <option value="v2" selected>Subtitle V2 (Dynamic Word Pop)</option>
-    <option value="v3">Subtitle V3 (Kinetic Emphasis)</option>
-    <option value="v1">Subtitle V1 (Classic)</option>
-  `;
-
-  subtitleStyleItem.appendChild(styleLeft);
-  subtitleStyleItem.appendChild(subtitleStyleSelect);
-
-  captionToggle.input.addEventListener('change', () => {
-    subtitleStyleItem.style.display = captionToggle.input.checked ? '' : 'none';
-  });
-
-  // Portrait is always on — hide the toggle item from UI
-  portraitToggle.element.style.display = 'none';
-  portraitToggle.input.checked = true;
-
-  toggles.appendChild(portraitToggle.element);
-  toggles.appendChild(highlightToggle.element);
-  toggles.appendChild(captionToggle.element);
-  toggles.appendChild(subtitleStyleItem);
-  toggles.appendChild(hookToggle.element);
-  toggles.appendChild(titleToggle.element);
-  configBody.appendChild(toggles);
-
-  // Clip mode toggle
+  const countGroup = inputGroup('Jumlah clip', 'clips');
   let clipMode = 'fixed';
-  const clipModeLabel = document.createElement('label');
-  clipModeLabel.className = 'field-label';
-  clipModeLabel.style.cssText = 'display:block;margin-top:10px;margin-bottom:6px;';
-  clipModeLabel.textContent = 'Number of clips';
-  configBody.appendChild(clipModeLabel);
-
   const clipModeRow = document.createElement('div');
-  clipModeRow.style.cssText = 'display:flex;gap:0;margin-bottom:8px;border-radius:8px;overflow:hidden;border:1px solid var(--border);';
+  clipModeRow.className = 'create-clip-mode';
+  clipModeRow.setAttribute('role', 'group');
+  clipModeRow.setAttribute('aria-label', 'Cara menentukan jumlah clip');
   const btnFixed = document.createElement('button');
-  btnFixed.textContent = 'Fixed number';
+  btnFixed.className = 'btn btn-outline';
+  btnFixed.textContent = 'Tentukan jumlah';
   btnFixed.type = 'button';
-  btnFixed.style.cssText = 'flex:1;padding:8px 12px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--lime);color:#1a1a2e;transition:all 0.2s;';
   const btnAI = document.createElement('button');
-  btnAI.textContent = 'AI decides';
+  btnAI.className = 'btn btn-outline';
+  btnAI.textContent = 'AI menentukan';
   btnAI.type = 'button';
-  btnAI.style.cssText = 'flex:1;padding:8px 12px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text-secondary);transition:all 0.2s;';
-  clipModeRow.appendChild(btnFixed);
-  clipModeRow.appendChild(btnAI);
-  configBody.appendChild(clipModeRow);
-
+  clipModeRow.append(btnFixed, btnAI);
   const clipsInput = document.createElement('input');
   clipsInput.type = 'number';
   clipsInput.min = '1';
+  clipsInput.max = '100';
+  clipsInput.step = '1';
   clipsInput.value = '5';
   clipsInput.className = 'input';
   clipsInput.id = 'clips';
-  configBody.appendChild(clipsInput);
+  const clipModeHint = document.createElement('p');
+  clipModeHint.className = 'create-clip-feedback';
+  clipModeHint.id = 'clip-count-hint';
+  clipModeHint.setAttribute('role', 'status');
+  clipsInput.setAttribute('aria-describedby', clipModeHint.id);
+  function setClipMode(mode) {
+    clipMode = mode;
+    btnFixed.setAttribute('aria-pressed', String(mode === 'fixed'));
+    btnAI.setAttribute('aria-pressed', String(mode === 'ai'));
+    clipsInput.hidden = mode === 'ai';
+    clipModeHint.textContent = mode === 'ai'
+      ? 'Jumlah clip mengikuti highlight yang memenuhi kualitas campaign.'
+      : 'Jumlah yang ingin dibuat dari setiap sumber video.';
+  }
+  btnFixed.addEventListener('click', () => setClipMode('fixed'));
+  btnAI.addEventListener('click', () => setClipMode('ai'));
+  setClipMode('fixed');
+  countGroup.append(clipModeRow, clipsInput, clipModeHint);
 
-  const clipModeHint = document.createElement('div');
-  clipModeHint.style.cssText = 'font-size:11px;color:var(--text-muted);margin-top:4px;margin-bottom:10px;';
-  clipModeHint.textContent = 'Generate this many clips, regardless of score.';
-  configBody.appendChild(clipModeHint);
-
-  const aiNote = document.createElement('div');
-  aiNote.style.cssText = 'background:rgba(163,255,51,0.08);border:1px solid rgba(163,255,51,0.2);border-radius:8px;padding:10px 12px;font-size:11px;color:#3d6b10;margin-bottom:10px;display:none;';
-  aiNote.textContent = 'AI akan menghasilkan sebanyak mungkin clip \u2014 hanya highlight skor sedang & tinggi yang dipakai.';
-  configBody.appendChild(aiNote);
-
-  btnFixed.addEventListener('click', () => {
-    clipMode = 'fixed';
-    btnFixed.style.background = 'var(--lime)'; btnFixed.style.color = '#1a1a2e';
-    btnAI.style.background = 'var(--bg)'; btnAI.style.color = 'var(--text-secondary)';
-    clipsInput.style.display = ''; clipModeHint.style.display = ''; aiNote.style.display = 'none';
+  const cookieSection = inputGroup('Cookie', 'cookies-btn');
+  const cookiesBtn = document.createElement('button');
+  cookiesBtn.id = 'cookies-btn';
+  cookiesBtn.className = 'btn btn-outline';
+  cookiesBtn.type = 'button';
+  cookiesBtn.textContent = 'Pilih file cookies.txt';
+  const cookieStatus = document.createElement('p');
+  cookieStatus.className = 'create-clip-feedback';
+  cookieStatus.setAttribute('role', 'status');
+  cookieStatus.textContent = 'Opsional untuk sumber yang membutuhkan login. Cookie tersimpan akan digunakan kembali.';
+  cookieSection.append(cookiesBtn, cookieStatus);
+  let cookiesBusy = false;
+  cookiesBtn.addEventListener('click', async () => {
+    if (cookiesBusy) return;
+    cookiesBusy = true;
+    cookiesBtn.disabled = true;
+    try {
+      const result = await window.pywebview.api.upload_cookies();
+      if (result.status === 'ok') cookieStatus.textContent = 'Cookie tersimpan dan siap digunakan.';
+      else if (result.status === 'error') cookieStatus.textContent = result.message || 'Cookie belum dapat disimpan.';
+    } catch (error) {
+      cookieStatus.textContent = 'Cookie belum dapat diunggah: ' + String(error);
+    } finally {
+      cookiesBusy = false;
+      cookiesBtn.disabled = inputs.dataset.locked === 'true';
+    }
   });
-  btnAI.addEventListener('click', () => {
-    clipMode = 'ai';
-    btnAI.style.background = 'var(--lime)'; btnAI.style.color = '#1a1a2e';
-    btnFixed.style.background = 'var(--bg)'; btnFixed.style.color = 'var(--text-secondary)';
-    clipsInput.style.display = 'none'; clipModeHint.style.display = 'none'; aiNote.style.display = '';
-  });
 
-  // Subtitle select
-  const subtitleLabel = document.createElement('label');
-  subtitleLabel.className = 'field-label';
-  subtitleLabel.style.cssText = 'display:block;margin-top:10px;margin-bottom:6px;';
-  subtitleLabel.textContent = 'Subtitle Language';
-  configBody.appendChild(subtitleLabel);
-  const subtitleSelect = document.createElement('select');
-  subtitleSelect.className = 'input';
-  subtitleSelect.id = 'subtitle';
-  subtitleSelect.style.marginBottom = '10px';
-  subtitleSelect.innerHTML = '<option value="id" selected>Indonesian</option><option value="en">English</option>';
-  configBody.appendChild(subtitleSelect);
-
-  // Cookies
-  const cookieSection = document.createElement('div');
-  cookieSection.style.marginTop = '16px';
-  cookieSection.innerHTML = `
-    <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-      <label class="field-label">Cookies</label>
-      <span style="font-size:11px;color:var(--text-muted);">Expired in 2 weeks</span>
-    </div>
-    <div class="upload-zone" id="cookies-upload-zone" style="cursor:pointer;">Upload Your Cookies Here</div>
-  `;
-  configBody.appendChild(cookieSection);
-
-  configCard.appendChild(configBody);
-  col1.appendChild(configCard);
-
-  // Bottom button col1
-  const saveConfigBtn = document.createElement('button');
-  saveConfigBtn.className = 'btn btn-lime-full';
-  saveConfigBtn.textContent = 'Save Default Configuration';
-  col1.appendChild(saveConfigBtn);
-
-  // ── Column 2: Preview ──
-  const col2 = document.createElement('div');
-  col2.style.cssText = 'display:flex;flex-direction:column;gap:16px;';
-
-  const preview = document.createElement('div');
-  preview.className = 'preview-panel';
-  preview.style.flex = '1';
-  preview.innerHTML = '<div class="preview-text">9:16</div>';
-  col2.appendChild(preview);
-
+  const formError = document.createElement('p');
+  formError.className = 'create-clip-feedback wf-error';
+  formError.setAttribute('role', 'alert');
+  inputs.appendChild(formError);
   const startBtn = document.createElement('button');
-  startBtn.className = 'btn btn-lime-full';
+  startBtn.className = 'btn btn-lime-full create-clip-submit';
   startBtn.id = 'start';
+  startBtn.type = 'button';
   startBtn.textContent = 'Create Clip';
-  col2.appendChild(startBtn);
+  inputs.appendChild(startBtn);
 
-  // ── Column 3: Progress ──
-  const col3 = document.createElement('div');
-  col3.style.cssText = 'display:flex;flex-direction:column;gap:16px;';
+  const jobsPanel = document.createElement('section');
+  jobsPanel.className = 'create-clip-progress create-clip-jobs';
+  jobsPanel.setAttribute('aria-label', 'Pekerjaan video');
+  const jobsHeader = document.createElement('div');
+  jobsHeader.className = 'wf-header';
+  const jobsHeading = document.createElement('h2');
+  jobsHeading.className = 'card-title';
+  jobsHeading.textContent = 'Pekerjaan video';
+  const refreshJobsBtn = document.createElement('button');
+  refreshJobsBtn.className = 'btn btn-outline';
+  refreshJobsBtn.type = 'button';
+  refreshJobsBtn.textContent = 'Perbarui';
+  jobsHeader.append(jobsHeading, refreshJobsBtn);
+  const jobsFeedback = document.createElement('p');
+  jobsFeedback.className = 'create-job-feedback';
+  jobsFeedback.setAttribute('role', 'status');
+  const jobsList = document.createElement('div');
+  jobsList.className = 'create-job-list';
+  const jobsEmpty = document.createElement('p');
+  jobsEmpty.className = 'wf-empty';
+  jobsEmpty.textContent = 'Belum ada pekerjaan. Setiap sumber video akan menjadi satu pekerjaan.';
+  const progressPanel = document.createElement('section');
+  progressPanel.className = 'create-job-details';
+  progressPanel.id = 'create-job-details';
+  progressPanel.hidden = true;
+  const selectedTitle = document.createElement('h3');
+  selectedTitle.className = 'create-job-detail-header';
+  selectedTitle.id = 'selected-job-title';
+  const selectedMeta = document.createElement('p');
+  selectedMeta.className = 'create-job-row-meta';
+  const selectedCounts = document.createElement('p');
+  selectedCounts.className = 'create-job-counts';
+  progressPanel.setAttribute('aria-labelledby', selectedTitle.id);
+  progressPanel.append(selectedTitle, selectedMeta, selectedCounts);
+  jobsPanel.append(jobsHeader, jobsFeedback, jobsList, jobsEmpty, progressPanel);
+  layout.appendChild(jobsPanel);
+  section.appendChild(layout);
 
   const progressCard = document.createElement('div');
   progressCard.className = 'card';
@@ -284,7 +194,7 @@ window.Components.HomeView = function () {
   progressCount.id = 'progress-count';
   progressCount.style.cssText = 'font-size:20px;font-weight:500;color:var(--text-primary);';
   progressCount.textContent = '0/0';
-  progressHeader.innerHTML = '<h2 style="margin:0;font-size:16px;font-weight:600;">Progress</h2>';
+  progressHeader.innerHTML = '<h4 style="margin:0;font-size:16px;font-weight:600;">Progress pekerjaan</h4>';
   progressHeader.appendChild(progressCount);
   progressCard.appendChild(progressHeader);
 
@@ -392,101 +302,13 @@ window.Components.HomeView = function () {
   progressBody.appendChild(statusDiv);
 
   progressCard.appendChild(progressBody);
-  col3.appendChild(progressCard);
+  progressPanel.appendChild(progressCard);
 
   const openStockBtn = document.createElement('button');
   openStockBtn.className = 'btn btn-lime-full';
   openStockBtn.textContent = 'Open Clip Stock';
-  openStockBtn.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach(n => {
-      n.classList.toggle('active', n.dataset.view === 'stock-clip');
-    });
-    document.querySelectorAll('.view').forEach(v => {
-      v.classList.toggle('active', v.dataset.view === 'stock-clip');
-    });
-  });
-  col3.appendChild(openStockBtn);
-
-  grid.appendChild(col1);
-  grid.appendChild(col2);
-  grid.appendChild(col3);
-  section.appendChild(grid);
-
-  function showToast(msg, isError = false) {
-    const toast = document.createElement('div');
-    toast.textContent = msg;
-    toast.style.cssText = `
-      position: fixed; bottom: 20px; right: 20px; 
-      background: ${isError ? '#ef4444' : '#10b981'}; 
-      color: white; padding: 12px 24px; border-radius: 8px; 
-      font-size: 14px; font-weight: 500; z-index: 9999;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-      transition: opacity 0.3s;
-    `;
-    document.body.appendChild(toast);
-    setTimeout(() => { toast.style.opacity = '0'; }, 2500);
-    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 2800);
-  }
-
-  setTimeout(() => {
-    const cookiesBtn = section.querySelector('#cookies-btn');
-    const cookiesZone = section.querySelector('#cookies-upload-zone');
-    const uploadHandler = async () => {
-      try {
-        const res = await window.pywebview.api.upload_cookies();
-        if (res.status === 'ok') {
-          showToast('Cookies uploaded successfully!');
-        } else if (res.status === 'error') {
-          showToast('Error: ' + res.message, true);
-        }
-      } catch (err) {
-        showToast('Failed to upload cookies', true);
-      }
-    };
-    if (cookiesBtn) cookiesBtn.addEventListener('click', uploadHandler);
-    if (cookiesZone) cookiesZone.addEventListener('click', uploadHandler);
-
-    async function loadDefaultConfig() {
-      try {
-        const config = await window.pywebview.api.get_default_config();
-        if (config) {
-          if (config.num_clips !== undefined) clipsInput.value = config.num_clips;
-          if (config.portrait !== undefined) portraitToggle.input.checked = config.portrait;
-          if (config.highlight_finder !== undefined) highlightToggle.input.checked = config.highlight_finder;
-          if (config.add_captions !== undefined) {
-            captionToggle.input.checked = config.add_captions;
-            subtitleStyleItem.style.display = config.add_captions ? '' : 'none';
-          }
-          if (config.add_hook !== undefined) hookToggle.input.checked = config.add_hook;
-          if (config.yt_title_maker !== undefined) titleToggle.input.checked = config.yt_title_maker;
-          if (config.subtitle_style) subtitleStyleSelect.value = config.subtitle_style;
-        }
-      } catch (err) {}
-    }
-    loadDefaultConfig();
-  }, 0);
-
-  saveConfigBtn.addEventListener('click', async () => {
-    const settings = {
-      num_clips: parseInt(clipsInput.value, 10),
-      portrait: portraitToggle.input.checked,
-      highlight_finder: highlightToggle.input.checked,
-      add_captions: captionToggle.input.checked,
-      add_hook: hookToggle.input.checked,
-      yt_title_maker: titleToggle.input.checked,
-      subtitle_style: subtitleStyleSelect.value
-    };
-    try {
-      const res = await window.pywebview.api.save_default_config(settings);
-      if (res && res.status === 'saved') {
-        showToast('Default configuration saved!');
-      } else {
-        showToast('Failed to save config', true);
-      }
-    } catch (err) {
-      showToast('Error saving config', true);
-    }
-  });
+  openStockBtn.addEventListener('click', () => setActiveView('stock-clip'));
+  progressPanel.appendChild(openStockBtn);
 
   return {
     element: section,
@@ -496,17 +318,23 @@ window.Components.HomeView = function () {
       start: startBtn,
       clips: clipsInput,
       clipMode: () => clipMode,
-      subtitle: subtitleSelect,
-      subtitleStyle: subtitleStyleSelect,
-      portrait: portraitToggle.input,
-      highlight: highlightToggle.input,
-      captions: captionToggle.input,
-      hook: hookToggle.input,
-      ytTitle: titleToggle.input,
-      highlightSub: highlightToggle.subEl,
-      captionSub: captionToggle.subEl,
-      hookSub: hookToggle.subEl,
-      ytTitleSub: titleToggle.subEl,
+      sourceFeedback,
+      formError,
+      sourceActions: urlGroup,
+      jobsList,
+      jobsEmpty,
+      jobsFeedback,
+      refreshJobsBtn,
+      selectedTitle,
+      selectedMeta,
+      selectedCounts,
+      progressPanel,
+      setLocked: (locked) => {
+        inputs.dataset.locked = String(locked);
+        inputs.querySelectorAll('input, textarea, select, button').forEach(control => {
+          control.disabled = locked || (control === cookiesBtn && cookiesBusy);
+        });
+      },
       bar: progressFill,
       status: statusDiv,
       terminal,

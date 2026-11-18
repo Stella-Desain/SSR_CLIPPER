@@ -6,6 +6,7 @@
 window.Components = window.Components || {};
 
 window.Components.DashboardView = function () {
+  const escapeText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const section = document.createElement('section');
   section.className = 'view entrance';
   section.dataset.view = 'dashboard';
@@ -17,7 +18,7 @@ window.Components.DashboardView = function () {
   hdrSection.innerHTML = `
     <div>
       <h1 style="font-size:34px;font-weight:700;color:#111827;letter-spacing:-0.02em;line-height:1.15;margin-bottom:8px;">Dashboard</h1>
-      <p style="font-size:14px;font-weight:400;color:#6B7280;line-height:1.5;">An any way to manage sales with care and precision.</p>
+      <p style="font-size:14px;font-weight:400;color:#6B7280;line-height:1.5;">Pantau campaign, produksi clip, dan pekerjaan yang berjalan.</p>
     </div>
     <button id="btn-repliz-dashboard" style="height:38px;padding:0 17px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:8px;font-size:14px;font-weight:500;color:#374151;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.05);transition:background 150ms ease;" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background='#FFFFFF'">
       Repliz Dashboard
@@ -63,22 +64,22 @@ window.Components.DashboardView = function () {
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
         <!-- 12 + TikTok -->
         <span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.65);">
-          <span id="dash-tiktok-count">12</span>
+          <span id="dash-tiktok-count">—</span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.65)"><path d="M12.53.02C13.84 0 15.14.01 16.44 0c.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.12-3.44-3.17-3.8-5.46-.4-2.51.13-5.23 1.82-7.08 1.49-1.7 3.8-2.61 6.09-2.11l.01 4.26c-1.15-.22-2.42-.16-3.42.49-1.25.76-1.88 2.37-1.47 3.79.43 1.54 2.1 2.53 3.69 2.18 1.13-.24 2.01-1.19 2.22-2.34.09-.54.12-1.09.12-1.64 0-4.93-.01-9.86.01-14.79Z"/></svg>
         </span>
         <!-- 12 + YouTube -->
         <span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.65);">
-          <span id="dash-youtube-count">12</span>
+          <span id="dash-youtube-count">—</span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.65)"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34l-.01-8.92a8.16 8.16 0 004.76 1.52V4.46a4.85 4.85 0 01-1-.23z"/></svg>
         </span>
         <!-- 12 + Instagram -->
         <span style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.65);">
-          <span id="dash-instagram-count">12</span>
+          <span id="dash-instagram-count">—</span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.65)"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
         </span>
       </div>
       <!-- Big label (Figma 2:54) -->
-      <div style="font-size:22px;font-weight:700;color:#FFFFFF;letter-spacing:-0.02em;line-height:1.1;" id="dash-campaigns-count">12 Campaign</div>
+      <div style="font-size:22px;font-weight:700;color:#FFFFFF;letter-spacing:-0.02em;line-height:1.1;" id="dash-campaigns-count">— Campaign</div>
     </div>
   `;
   kpiRow.appendChild(kpi1);
@@ -102,7 +103,7 @@ window.Components.DashboardView = function () {
       <span style="font-size:14px;font-weight:500;color:#374151;">Clips Created</span>
     </div>
     <div>
-      <div style="font-size:22px;font-weight:700;color:#111827;letter-spacing:-0.02em;line-height:1.1;" id="dash-clips-count">0 Clips</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;letter-spacing:-0.02em;line-height:1.1;" id="dash-clips-count">— Clips</div>
     </div>
   `;
   kpiRow.appendChild(kpi2);
@@ -165,7 +166,7 @@ window.Components.DashboardView = function () {
   campHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:25px 25px 0 25px;';
   campHead.innerHTML = `
     <h2 style="font-size:18px;font-weight:700;color:#111827;line-height:1.2;">Campaign</h2>
-    <button onclick="alert('Fitur belum tersedia'); /* TODO: backend restock_clip belum ada, perlu keputusan produk */" style="display:flex;align-items:center;gap:6px;height:30px;padding:0 13px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:8px;font-size:12px;font-weight:500;color:#374151;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.04);transition:background 150ms ease;" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background='#FFFFFF'">
+    <button onclick="setActiveView('create-clip')" style="display:flex;align-items:center;gap:6px;height:30px;padding:0 13px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:8px;font-size:12px;font-weight:500;color:#374151;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.04);transition:background 150ms ease;" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background='#FFFFFF'">
       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
       Restock Clip
     </button>
@@ -250,32 +251,53 @@ window.Components.DashboardView = function () {
   bentoRoot.appendChild(rightCol);
 
   section.appendChild(bentoRoot);
-  
+
   // Data Refresh function
   async function refresh() {
     if (!window.pywebview || !window.pywebview.api) return;
     try {
       const stats = await window.pywebview.api.get_dashboard_stats();
-      
+
       const clipsCountEl = section.querySelector('#dash-clips-count');
       if (clipsCountEl) clipsCountEl.textContent = stats.totalVideosClipped + ' Clips';
-      
+
       const storageEl = section.querySelector('#dash-storage-used');
       if (storageEl) storageEl.textContent = 'Size all: ' + stats.storageUsed;
-      
+
       const filterClipsEl = section.querySelector('#dash-filter-clips');
       if (filterClipsEl) filterClipsEl.textContent = 'Clips: ' + stats.totalVideosClipped;
 
-      // Dependencies
-      const deps = await window.pywebview.api.check_dependencies();
-      const sY = section.querySelector('#status-ytdlp');
-      if(sY) sY.style.background = deps.ffmpeg ? '#8DC63F' : '#EF4444'; // Use ffmpeg true for yt-dlp placeholder too
-      const sF = section.querySelector('#status-ffmpeg');
-      if(sF) sF.style.background = deps.ffmpeg ? '#8DC63F' : '#EF4444';
-      const sD = section.querySelector('#status-deno');
-      if(sD) sD.style.background = deps.deno ? '#8DC63F' : '#EF4444';
-      const sW = section.querySelector('#status-whisper');
-      if(sW) sW.style.background = deps.whisper ? '#8DC63F' : '#EF4444';
+      // Dependencies - use detailed status if available
+      let depsDetailed = null;
+      try {
+        if (window.pywebview.api.check_dependencies_detailed) {
+          depsDetailed = await window.pywebview.api.check_dependencies_detailed();
+        }
+      } catch(_) {}
+
+      const colorMap = { 'up_to_date': '#10B981', 'update_available': '#F59E0B', 'not_installed': '#EF4444' };
+
+      if (depsDetailed) {
+        const sY = section.querySelector('#status-ytdlp');
+        if(sY) sY.style.background = colorMap[depsDetailed.ytdlp?.status] || '#EF4444';
+        const sF = section.querySelector('#status-ffmpeg');
+        if(sF) sF.style.background = colorMap[depsDetailed.ffmpeg?.status] || '#EF4444';
+        const sD = section.querySelector('#status-deno');
+        if(sD) sD.style.background = colorMap[depsDetailed.deno?.status] || '#EF4444';
+        const sW = section.querySelector('#status-whisper');
+        if(sW) sW.style.background = colorMap[depsDetailed.whisper?.status] || '#EF4444';
+      } else {
+        // Fallback to old boolean check
+        const deps = await window.pywebview.api.check_dependencies();
+        const sY = section.querySelector('#status-ytdlp');
+        if(sY) sY.style.background = deps.ytdlp ? '#10B981' : '#EF4444';
+        const sF = section.querySelector('#status-ffmpeg');
+        if(sF) sF.style.background = deps.ffmpeg ? '#10B981' : '#EF4444';
+        const sD = section.querySelector('#status-deno');
+        if(sD) sD.style.background = deps.deno ? '#10B981' : '#EF4444';
+        const sW = section.querySelector('#status-whisper');
+        if(sW) sW.style.background = deps.whisper ? '#10B981' : '#EF4444';
+      }
 
       // Load Campaigns Tree
       let campaigns = [];
@@ -289,14 +311,8 @@ window.Components.DashboardView = function () {
       const tikCountEl = section.querySelector('#dash-tiktok-count');
       const ytCountEl = section.querySelector('#dash-youtube-count');
       const igCountEl = section.querySelector('#dash-instagram-count');
-      if (accStats && !accStats.error) {
-        if (tikCountEl) tikCountEl.textContent = accStats.tiktok_count;
-        if (ytCountEl) ytCountEl.textContent = accStats.youtube_count;
-        if (igCountEl) igCountEl.textContent = accStats.instagram_count;
-      } else {
-        if (tikCountEl) tikCountEl.textContent = '0';
-        if (ytCountEl) ytCountEl.textContent = '0';
-        if (igCountEl) igCountEl.textContent = '0';
+      for (const [element, key] of [[tikCountEl,'tiktok_count'],[ytCountEl,'youtube_count'],[igCountEl,'instagram_count']]) {
+        if (element) element.textContent = accStats && !accStats.error && Number.isFinite(accStats[key]) ? accStats[key] : '—';
       }
       if (campaigns && campaigns.length > 0) {
         treeContainer.innerHTML = '';
@@ -316,15 +332,15 @@ window.Components.DashboardView = function () {
             summary.innerHTML =
               '<div style="display:flex;align-items:center;gap:6px;">' +
                 '<svg style="width:7px;height:7px;color:' + (open ? '#2E4D0F' : '#6B7280') + ';transform:' + (open ? 'rotate(0deg)' : 'rotate(-90deg)') + ';transition:transform 150ms;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>' +
-                '<span style="font-size:13px;font-weight:600;color:' + (open ? '#2E4D0F' : '#374151') + ';">' + (camp.name || 'Campaign') + '</span>' +
+                '<span style="font-size:13px;font-weight:600;color:' + (open ? '#2E4D0F' : '#374151') + ';">' + escapeText(camp.name || 'Campaign') + '</span>' +
               '</div>' +
               '<div style="display:flex;align-items:center;gap:12px;">' +
                 '<span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:' + (open ? '#2E4D0F' : '#6B7280') + ';">' +
-                  (counts[0] || '0') +
+                  escapeText(counts[0] || '0') +
                   '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zm-11-2l6-5-6-5v10z"/></svg>' +
                 '</span>' +
                 '<span style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:' + (open ? '#2E4D0F' : '#6B7280') + ';">' +
-                  (counts[1] || '0') +
+                  escapeText(counts[1] || '0') +
                   '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>' +
                 '</span>' +
               '</div>';
@@ -345,7 +361,7 @@ window.Components.DashboardView = function () {
               childRow.innerHTML =
                 '<div style="display:flex;align-items:center;gap:8px;">' +
                   '<div style="width:12px;height:12px;border-radius:50%;background:#111827;flex-shrink:0;"></div>' +
-                  '<span style="font-size:13px;font-weight:400;color:#374151;">' + childName + '</span>' +
+                  '<span style="font-size:13px;font-weight:400;color:#374151;">' + escapeText(childName) + '</span>' +
                 '</div>';
               const hconn = document.createElement('div');
               hconn.style.cssText = 'position:absolute;left:18px;top:' + (19 + cIdx * 38) + 'px;width:14px;height:1px;background:#E5E7EB;';
@@ -382,7 +398,7 @@ window.Components.DashboardView = function () {
           const fileItem = window.FileItem.v1({
             title: c.title,
             info1: 'Durasi: ' + c.duration,
-            info2: new Date(c.date).toLocaleDateString(),
+            info2: window.SSRTime.date(c.date),
             onEdit: () => {
               window.pywebview.api.open_output_folder();
             }
@@ -390,7 +406,7 @@ window.Components.DashboardView = function () {
           stockList.appendChild(fileItem);
         });
       }
-      
+
       // Load Jobs History
       jobsList.innerHTML = '';
       const allJobs = [];
@@ -400,7 +416,7 @@ window.Components.DashboardView = function () {
       if (stats.recentJobs && stats.recentJobs.length > 0) {
         allJobs.push(...stats.recentJobs.reverse());
       }
-      
+
       if (allJobs.length === 0) {
         jobsList.innerHTML = '<div style="padding:16px 25px;color:#6B7280;font-size:13px;">No active or recent jobs.</div>';
       } else {

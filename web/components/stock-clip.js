@@ -209,7 +209,7 @@ window.Components.StockClipView = function () {
           const item = window.FileItem.v2({
             title: folder.title || 'Unknown Video',
             info1: `${folder.clip_count} clip${folder.clip_count === 1 ? '' : 's'}`,
-            info2: folder.date ? new Date(folder.date).toLocaleDateString() : '',
+            info2: folder.date ? window.SSRTime.date(folder.date) : '',
             size: '',
             onDelete: async () => {
               if (confirm('Delete this video and all its clips?')) {
@@ -331,7 +331,7 @@ window.Components.StockClipView = function () {
           const clip = window.FileItem.v3({
             title: c.title,
             info1: 'Durasi: ' + c.duration,
-            info2: new Date(c.date).toLocaleDateString(),
+            info2: window.SSRTime.date(c.date),
             onDelete: async () => {
               if (!confirm('Delete this clip?')) return;
               const res = await window.pywebview.api.delete_clip(c.path);

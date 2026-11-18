@@ -36,6 +36,7 @@ class ConfigManager:
                 # Add default temperature if not exists
                 if "temperature" not in config:
                     config["temperature"] = 1.0
+                config.setdefault("timezone", "Asia/Makassar")
                 # Add default tts_model if not exists (for backward compatibility)
                 if "tts_model" not in config:
                     config["tts_model"] = "tts-1"
@@ -103,6 +104,7 @@ class ConfigManager:
             "model": "gpt-4.1",  # Kept for backward compatibility
             "tts_model": "tts-1",  # Kept for backward compatibility
             "temperature": 1.0,
+            "timezone": "Asia/Makassar",
             "max_highlights": 30,
             "ai_decides_min_score": 6,
             "output_dir": str(self.output_dir),

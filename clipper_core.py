@@ -14,11 +14,17 @@ import numpy as np
 import tempfile
 import sys
 import time
+import shutil
 from pathlib import Path
 from datetime import datetime
 from openai import OpenAI, APIConnectionError, RateLimitError, APIStatusError
 from utils.logger import debug_log
 from utils.helpers import get_deno_path, get_ffmpeg_path, sanitize_folder_name
+from services.editing import (ANALYSIS_VERSION, atomic_json, bounded_workers, build_clip_plan,
+    config_hash, file_sha256, fingerprint_source, mix_music, probe_media,
+    render_composition, resolve_template, validate_clip_plan, EditingValidationError)
+from services.core_workflow import CoreWorkflowMixin
+from services.face_tracking import StableFaceTracker, CameraPlanner, scene_changed
 
 # Setup Deno and FFmpeg in PATH before importing yt-dlp
 _deno_path = get_deno_path()
@@ -83,7 +89,7 @@ def _hex_to_rgb(hex_color: str):
         return (255, 255, 255)
 
 
-class AutoClipperCore:
+class AutoClipperCore(CoreWorkflowMixin):
     """Core processing logic for Auto Clipper"""
     
     def __init__(
@@ -194,6 +200,13 @@ class AutoClipperCore:
         self.is_cancelled = cancel_check or (lambda: False)
         self.clips_state = {}
         self.clips_state_lock = threading.Lock()
+        self.campaign_config = {}
+        self.job_id = None
+        self.work_dir = None
+        self.resume_dir = None
+        self.finalize_callback = None
+        self.music_selector_callback = None
+        self.source_analysis = {}
         
         # GPU acceleration settings
         self.gpu_enabled = False
@@ -204,8 +217,9 @@ class AutoClipperCore:
         self.mp_drawing = None
         
         # Create temp directory
-        self.temp_dir = self.output_dir / "_temp"
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_root = self.output_dir / "_temp"
+        temp_root.mkdir(parents=True, exist_ok=True)
+        self.temp_dir = Path(tempfile.mkdtemp(prefix="job-", dir=temp_root))
     
     def enable_gpu_acceleration(self, enabled: bool = True):
         """Enable or disable GPU acceleration for video encoding"""
@@ -346,6 +360,8 @@ class AutoClipperCore:
         that looks like a GPU encoder problem, rewrites the command to use
         libx264 and retries once. Returns the final ``CompletedProcess``.
         """
+        from services.editing import bounded_ffmpeg_command
+        cmd = bounded_ffmpeg_command(cmd)
         kwargs.setdefault('capture_output', True)
         kwargs.setdefault('text', True)
         kwargs.setdefault('creationflags', SUBPROCESS_FLAGS)
@@ -613,197 +629,6 @@ KONTEN
 Transcript:
 {transcript}"""
     
-    def process(self, url: str, num_clips: int = 5, add_captions: bool = True, add_hook: bool = True, portrait: bool = True, highlight_finder: bool = True, yt_title_maker: bool = True, campaign_id: str = None, max_highlights: int = 30, fixed_count: int = None, min_score: int = 6, dur_min: int = 58, dur_max: int = 120, subtitle_style: str = "v2"):
-        """Main processing pipeline"""
-        
-        # TODO: logic highlight_finder/yt_title_maker belum diimplementasi di core
-        
-        # Step 1: Try subtitle-only first (lightweight, no video download)
-        self.set_progress("Checking subtitles...", 0.05)
-        video_path = None
-        try:
-            srt_path, video_info = self.download_subtitle_only(url)
-        except Exception:
-            srt_path, video_info = None, None
-        
-        # Store channel name for credit watermark
-        self.channel_name = video_info.get("channel", "") if video_info else ""
-        
-        if self.is_cancelled():
-            return
-        
-        # Step 2: Get transcript
-        if srt_path:
-            self.set_progress("Parsing subtitles...", 0.15)
-            self.log("📄 Using YouTube subtitle")
-            transcript = self.parse_srt(srt_path)
-        else:
-            # Must download full video for Whisper transcription
-            self.set_progress("Downloading video...", 0.1)
-            video_path, _, video_info_dl = self.download_video(url)
-            if video_info_dl:
-                video_info = video_info_dl
-                self.channel_name = video_info.get("channel", "") if video_info else ""
-            self.set_progress("Transcribing video...", 0.15)
-            self.log("🎤 No subtitle — transcribing with Whisper...")
-            transcript = self.transcribe_full_video(video_path)
-        
-        self.set_progress("Finding highlights...", 0.3)
-        highlights = self.find_highlights(transcript, video_info, max_highlights, fixed_count=fixed_count, min_score=min_score, dur_min=dur_min, dur_max=dur_max)
-        
-        if self.is_cancelled():
-            return
-        
-        if not highlights:
-            raise Exception("No valid highlights found!")
-        
-        # Step 3: Buat SATU folder untuk video ini, nama dari judul video
-        video_title = video_info.get("title", "Untitled Video") if video_info else "Untitled Video"
-        folder_name = sanitize_folder_name(video_title)
-        video_folder = self.output_dir / folder_name
-        suffix = 2
-        while video_folder.exists():
-            video_folder = self.output_dir / f"{folder_name}-{suffix}"
-            suffix += 1
-        video_folder.mkdir(parents=True, exist_ok=True)
-        
-        # Alihkan sementara output_dir ke folder video ini, supaya semua clip
-        # dari video ini kebuat DI DALAM folder video (bukan langsung di output/)
-        original_output_dir = self.output_dir
-        self.output_dir = video_folder
-        
-        # Step 4: Assign conflict groups before dispatching to workers
-        self._assign_conflict_groups(highlights)
-        
-        # Step 4b: Determine video source for each clip
-        clip_sources = {}  # conflict_group_id -> (video_path, pre_cut)
-        
-        if video_path:
-            # Full video already downloaded (no-subtitle path or full download)
-            for h in highlights:
-                clip_sources[h["conflict_group_id"]] = (str(video_path), False)
-        else:
-            # Calculate unique duration coverage vs total video length
-            ranges = [(self.parse_timestamp(h["start_time"]), self.parse_timestamp(h["end_time"])) for h in highlights]
-            unique_duration = self._calc_unique_duration(ranges)
-            total_duration = video_info.get("duration") or 1
-            
-            if unique_duration / total_duration > 0.5:
-                # More than half the video needed — download full once
-                self.set_progress("Downloading full video...", 0.2)
-                self.log(f"📥 Highlights cover {unique_duration/total_duration:.0%} of video — downloading full")
-                video_path, _, _ = self.download_video(url)
-                for h in highlights:
-                    clip_sources[h["conflict_group_id"]] = (str(video_path), False)
-            else:
-                # Download per conflict group segment
-                self.log(f"✂️ Highlights cover {unique_duration/total_duration:.0%} of video — downloading segments only")
-                groups = {}
-                for h in highlights:
-                    gid = h["conflict_group_id"]
-                    s = self.parse_timestamp(h["start_time"])
-                    e = self.parse_timestamp(h["end_time"])
-                    if gid not in groups:
-                        groups[gid] = [s, e]
-                    else:
-                        groups[gid][0] = min(groups[gid][0], s)
-                        groups[gid][1] = max(groups[gid][1], e)
-                
-                for i, (gid, (gs, ge)) in enumerate(groups.items()):
-                    self.set_progress(f"Downloading segment {i+1}/{len(groups)}...", 0.2 + 0.08 * i / max(len(groups), 1))
-                    seg_path = str(video_folder / f"segment_{gid}.mp4")
-                    start_ts = self._seconds_to_srt_timestamp(gs)
-                    end_ts = self._seconds_to_srt_timestamp(ge)
-                    self.download_video_section(url, start_ts, end_ts, seg_path)
-                    clip_sources[gid] = (seg_path, True)
-                    self.log(f"  ✓ Segment {gid}: {start_ts} — {end_ts}")
-
-        # Build per-clip state tracking
-        self.clips_state = {
-            i: {
-                "index": i,
-                "title": h.get("title"),
-                "virality_score": h.get("virality_score"),
-                "start_time": h.get("start_time"),
-                "end_time": h.get("end_time"),
-                "status": "waiting",
-                "step": "Queued",
-                "step_progress": 0.0,
-                "error": None,
-            }
-            for i, h in enumerate(highlights, 1)
-        }
-
-        # Pre-init MediaPipe in main thread if needed (thread safety)
-        if portrait and self.face_tracking_mode == "mediapipe":
-            self._init_mediapipe()
-        
-        # Step 5: Process clips in parallel (4-7 workers)
-        total_clips = len(highlights)
-        worker_count = max(4, min(7, os.cpu_count() or 4))
-        self.log(f"\n🚀 Processing {total_clips} clips with {worker_count} parallel workers")
-        
-        completed_count = [0]  # mutable container for thread-safe access
-        completed_lock = threading.Lock()
-        clip_errors = []
-        
-        def _worker(index, highlight):
-            gid = highlight["conflict_group_id"]
-            src_path, is_pre_cut = clip_sources[gid]
-            self._update_clip_state(index, status="running", step="Starting")
-            try:
-                self.process_clip(
-                    src_path, highlight, index, total_clips,
-                    add_captions=add_captions, add_hook=add_hook,
-                    portrait=portrait, campaign_id=campaign_id,
-                    pre_cut=is_pre_cut,
-                    completed_counter=(completed_count, completed_lock, total_clips),
-                    full_transcript=transcript,
-                    subtitle_style=subtitle_style
-                )
-                self._update_clip_state(index, status="done", step="Done", step_progress=1.0)
-            except Exception as e:
-                clip_errors.append((index, highlight.get("title", "?"), str(e)))
-                self.log(f"  ❌ Clip {index} failed: {e}")
-                self._update_clip_state(index, status="error", error=str(e))
-            finally:
-                with completed_lock:
-                    completed_count[0] += 1
-        
-        try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
-                futures = []
-                for i, highlight in enumerate(highlights, 1):
-                    if self.is_cancelled():
-                        break
-                    futures.append(executor.submit(_worker, i, highlight))
-                # Wait for all submitted futures
-                concurrent.futures.wait(futures)
-        finally:
-            self.output_dir = original_output_dir
-        
-        if clip_errors:
-            self.log(f"\n⚠️ {len(clip_errors)} clip(s) failed:")
-            for idx, title, err in clip_errors:
-                self.log(f"  Clip {idx} ({title}): {err}")
-        
-        # Step 5: Simpan metadata video (dipakai Jobs panel buat nampilin folder ini)
-        video_meta = {
-            "title": video_title,
-            "url": url,
-            "created_at": datetime.now().isoformat(),
-            "clip_count": total_clips,
-            "campaign_id": campaign_id
-        }
-        with open(video_folder / "data.json", "w", encoding="utf-8") as f:
-            json.dump(video_meta, f, ensure_ascii=False, indent=2)
-        
-        # Cleanup
-        self.set_progress("Cleaning up...", 0.95)
-        self.cleanup()
-        
-        self.set_progress("Complete!", 1.0)
-        self.log(f"\n✅ Created {total_clips} clips in: {video_folder}")
     
     def download_video(self, url: str) -> tuple:
         """Download video and subtitle with progress using yt-dlp module or executable"""
@@ -2635,7 +2460,7 @@ Transcript:
         if not self.clips_state:
             return []
         with self.clips_state_lock:
-            return list(self.clips_state.values())
+            return [dict(state) for state in self.clips_state.values()]
 
     def _calc_unique_duration(self, ranges: list) -> float:
         """Calculate total unique duration from list of (start, end) tuples, merging overlaps."""
@@ -2699,6 +2524,11 @@ Transcript:
     
     def find_highlights(self, transcript: str, video_info: dict, max_highlights: int = 30, fixed_count: int = None, min_score: int = None, dur_min: int = 58, dur_max: int = 120) -> list:
         """Find highlights using AI (OpenAI-compatible API)"""
+        profile_mode = bool(getattr(self, "_campaign_profile_prompt", None))
+        if profile_mode:
+            # A private execution marker, never accepted from campaign/AI JSON.
+            # Mocked legacy helpers and manual revisions do not invent a score.
+            self._profile_candidates_required = True
         self.log(f"[2/4] Finding highlights (using {self.model})...")
         
         video_context = ""
@@ -2708,7 +2538,7 @@ Transcript:
 - Channel: {video_info.get('channel', 'Unknown')}
 - Deskripsi: {video_info.get('description', '')[:500]}"""
         
-        prompt = self.system_prompt.replace("{num_clips}", "30")  # backward compat for old user prompts
+        prompt = self.system_prompt.replace("{num_clips}", str(fixed_count or max_highlights))
         prompt = prompt.replace("{video_context}", video_context)
         prompt = prompt.replace("{transcript}", transcript)
         
@@ -2720,7 +2550,13 @@ Transcript:
             f"==================================================\n"
             f"* ABAIKAN aturan durasi lain yang mungkin disebutkan sebelumnya.\n"
             f"* Setiap clip HARUS berdurasi antara {dur_min} sampai {dur_max} detik.\n"
-            f"* Target ideal: {(dur_min + dur_max) // 2} detik.\n"
+            f"* Rentang ini adalah batas, BUKAN target durasi. Jangan otomatis memilih 30 detik, durasi minimum, atau titik tengah rentang.\n"
+            f"* Panjang tiap clip ditentukan oleh satu gagasan/cerita utuh: setup, penjelasan, lalu jawaban atau payoff. Gunakan seluruh rentang bila cerita memerlukannya.\n"
+            f"* Awali sebelum kalimat utamanya dimulai, dengan konteks yang cukup untuk dipahami tanpa video sebelumnya. Jangan mulai di tengah kalimat atau daftar.\n"
+            f"* Akhiri setelah gagasannya selesai, bukan sekadar menemukan tanda titik/jeda. Contoh: 'Kenapa?' wajib diikuti jawabannya, bukan menjadi akhir clip.\n"
+            f"* Baca konteks sebelum start dan sesudah end. Jika penjelasan/jawaban masih berlanjut, sertakan sampai selesai dalam batas durasi; jika tidak muat, pilih gagasan lain.\n"
+            f"* Durasi boleh bervariasi secara alami. Jangan menambah filler atau memotong ucapan untuk menyeragamkan durasi.\n"
+            f"* Kualitas dan kelengkapan lebih penting dari jumlah; kembalikan lebih sedikit highlight atau [] jika tidak ada cerita utuh yang memenuhi syarat, meskipun instruksi lama melarangnya.\n"
             f"* Pastikan perhitungan (end_time - start_time) dari timestamp WAJIB di rentang {dur_min}-{dur_max} detik.\n"
         )
         prompt += duration_override
@@ -2782,7 +2618,7 @@ Transcript:
                 f"Failed to get highlights from AI model.\n\n"
                 f"Error: {str(e)}\n\n"
                 f"Please check:\n"
-                f"1. API key is valid: {self.highlight_client.api_key[:20]}...\n"
+                "1. API key is configured and valid.\n"
                 f"2. Base URL is correct: {self.highlight_client.base_url}\n"
                 f"3. Model exists: {self.model}\n"
                 f"4. You have sufficient credits/quota"
@@ -2844,17 +2680,26 @@ Transcript:
                 raise Exception("AI response contains no JSON array. Full response logged above.")
         
         valid = []
+        if not isinstance(highlights, list):
+            raise Exception("AI highlights must be a JSON array.")
         for h in highlights:
+            if not isinstance(h, dict):
+                self.log("  ✗ Invalid highlight object, skipped")
+                continue
             # Fallback: convert "reason" to "description" if exists
             if "reason" in h and "description" not in h:
                 h["description"] = h.pop("reason")
                 self.log(f"  ⚠ Converted 'reason' to 'description' for '{h.get('title', 'Unknown')}'")
             
-            duration = self.parse_timestamp(h["end_time"]) - self.parse_timestamp(h["start_time"])
+            try:
+                duration = self.parse_timestamp(h["end_time"]) - self.parse_timestamp(h["start_time"])
+            except (KeyError, TypeError, ValueError):
+                self.log("  ✗ Invalid highlight timestamp, skipped")
+                continue
             h["duration_seconds"] = round(duration, 1)
             
             # Ensure virality_score exists (default to 5 if missing)
-            if "virality_score" not in h:
+            if "virality_score" not in h and not profile_mode:
                 h["virality_score"] = 5
                 self.log(f"  ⚠ Missing virality_score for '{h.get('title', 'Unknown')}', defaulting to 5")
             
@@ -2866,12 +2711,17 @@ Transcript:
             if dur_min <= duration <= dur_max:
                 valid.append(h)
                 virality = h.get("virality_score", 5)
-                self.log(f"  ✓ {h['title']} ({duration:.0f}s) [🔥 {virality}/10]")
+                self.log(f"  ✓ {h.get('title', 'Tanpa judul')} ({duration:.0f}s)" + (" [penilaian campaign]" if profile_mode else f" [🔥 {virality}/10]"))
             elif duration > dur_max:
                 self.log(f"  ✗ {h['title']} ({duration:.0f}s) - Too long, skipped")
             elif duration < dur_min:
                 self.log(f"  ✗ {h['title']} ({duration:.0f}s) - Too short, skipped")
             
+        # Campaigns rank only after evidence/gates are checked by the workflow.
+        # Do not remove candidates here using the old global virality threshold.
+        if profile_mode:
+            self.log(f"\n✅ {len(valid)} kandidat untuk pemeriksaan profil campaign")
+            return valid[:max_highlights]
         # Sort by virality score (highest first) and apply safety cap
         valid.sort(key=lambda h: h.get("virality_score", 5), reverse=True)
         if fixed_count is not None:
@@ -2894,7 +2744,7 @@ Transcript:
         self.log(f"\n✅ {len(valid)} highlights found, sorted by virality score")
         return valid
     
-    def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False, portrait: bool = True, campaign_id: str = None, completed_counter: tuple = None, full_transcript: str = None, subtitle_style: str = "v2"):
+    def _render_clip_base(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False, portrait: bool = True, campaign_id: str = None, completed_counter: tuple = None, full_transcript: str = None, subtitle_style: str = "v2", framing_override=None):
         """Process a single clip: cut, portrait, hook (optional), captions (optional)
         
         Args:
@@ -2912,10 +2762,11 @@ Transcript:
             return
         
         # Create output folder with unique timestamp per clip
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{index:02d}"
+        timestamp = f"clip-{index:03d}"
         clip_dir = self.output_dir / timestamp
         clip_dir.mkdir(parents=True, exist_ok=True)
         
+        (clip_dir / "master.mp4").unlink(missing_ok=True)
         self.log(f"  Output folder: {clip_dir}")
         
         start = highlight["start_time"].replace(",", ".")
@@ -3019,13 +2870,28 @@ Transcript:
         current_step += 1
         
         # Step 2: Convert to portrait with progress
-        if portrait:
+        if portrait or subtitle_style in {"podcast_square", "timothy_focus", "timothy_cinematic", "ruang_founder", "ruang_witness"}:
             if self.is_cancelled():
                 return
             clip_progress("Converting to portrait...", current_step, 0)
             portrait_file = clip_dir / "temp_portrait.mp4"
-            self.convert_to_portrait_with_progress(str(landscape_file), str(portrait_file), 
-                lambda p: clip_progress("Converting to portrait...", current_step, p))
+            if subtitle_style in {"timothy_focus", "timothy_cinematic", "ruang_founder", "ruang_witness"}:
+                from services.framing import frame_video
+                from services.reference_templates import template_spec
+                canvas = template_spec(subtitle_style)
+                frame_video(self, landscape_file, portrait_file,
+                    lambda p: clip_progress("Framing template...", current_step, p),
+                    output_width=canvas["width"], output_height=canvas["height"], output_fps=canvas["fps"],
+                    subject_anchor=canvas["anchor_x"], framing_mode=framing_override)
+            elif subtitle_style == "podcast_square":
+                from services.framing import frame_video
+                frame_video(self, landscape_file, portrait_file,
+                    lambda p: clip_progress("Framing kotak...", current_step, p),
+                    output_width=720, output_height=720, output_fps=30)
+            else:
+                self.convert_to_portrait_with_progress(str(landscape_file), str(portrait_file),
+                    lambda p: clip_progress("Converting to portrait...", current_step, p),
+                    **({"framing_mode": framing_override} if framing_override else {}))
             self.log("  ✓ Portrait conversion")
             current_step += 1
             
@@ -3119,6 +2985,8 @@ Transcript:
 
             self.log("  ✓ Added watermark")
             current_step += 1
+        if not final_file.exists():
+            shutil.copy2(current_output, final_file)
         # Mark complete
         clip_progress("Done", total_steps, 0)
         
@@ -3854,550 +3722,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             
             raise Exception(f"FFmpeg process failed:\n{error_summary}")
     
-    def convert_to_portrait_with_progress(self, input_path: str, output_path: str, progress_callback):
-        """Convert landscape to 9:16 portrait with speaker tracking and progress (router method)"""
-        try:
-            if self.face_tracking_mode == "mediapipe":
-                self.log("  Using MediaPipe (Active Speaker Detection)")
-                return self.convert_to_portrait_mediapipe_with_progress(input_path, output_path, progress_callback)
-            else:
-                self.log("  Using OpenCV (Fast Mode)")
-                return self.convert_to_portrait_opencv_with_progress(input_path, output_path, progress_callback)
-        except Exception as e:
-            # Fallback to OpenCV if MediaPipe fails
-            if self.face_tracking_mode == "mediapipe":
-                self.log(f"  ⚠ MediaPipe failed: {e}")
-                self.log("  Falling back to OpenCV mode...")
-                return self.convert_to_portrait_opencv_with_progress(input_path, output_path, progress_callback)
-            else:
-                raise
+    def convert_to_portrait_with_progress(self, input_path, output_path, progress_callback, framing_mode=None):
+        from services.framing import frame_video
+        return frame_video(self, input_path, output_path, progress_callback,
+                           **({"framing_mode": framing_mode} if framing_mode else {}))
     
-    # How often (in frames) we actually run Haar-cascade face detection during
-    # Pass 1. The result of stabilize_positions()/_stabilize_positions_with_activity()
-    # already collapses raw per-frame detections into discrete "shots" held for
-    # at least several seconds, so sampling every Nth frame (and holding the
-    # last known face position on the frames in between, exactly like today's
-    # code already does for frames where no face is found) has no measurable
-    # effect on the final crop decisions - it only changes how often we pay
-    # for the (expensive) detection call itself.
-    _FACE_DETECT_EVERY_N = 5
-    # Max width (px) of the frame we run detection on. detectMultiScale's cost
-    # scales with pixel count, so detecting on a small downscaled copy instead
-    # of the full-resolution frame is dramatically faster. The actual crop and
-    # resize in Pass 2 still always operate on the full-resolution frame, so
-    # this has zero effect on output video quality - only on how precisely we
-    # locate the face, which is already a rough "which side of frame" signal.
-    _FACE_DETECT_MAX_W = 480
-
     def convert_to_portrait_opencv_with_progress(self, input_path: str, output_path: str, progress_callback):
-        """Convert landscape to 9:16 portrait with speaker tracking and progress (OpenCV)"""
-        
-        self.log("[DEBUG] Starting portrait conversion...")
-        print("[DEBUG] Starting portrait conversion...")
-        print(f"[DEBUG] Input: {input_path}")
-        print(f"[DEBUG] Output: {output_path}")
-        sys.stdout.flush()
-        
-        cap = cv2.VideoCapture(input_path)
-        if not cap.isOpened():
-            raise Exception(f"Failed to open video: {input_path}")
-        
-        orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-        self.log(f"[DEBUG] Video: {orig_w}x{orig_h}, {fps}fps, {total_frames} frames")
-        print(f"[DEBUG] Video: {orig_w}x{orig_h}, {fps}fps, {total_frames} frames")
-        sys.stdout.flush()
-        
-        if total_frames == 0 or fps == 0:
-            cap.release()
-            raise Exception(f"Invalid video properties: {total_frames} frames, {fps} fps")
-        
-        # Calculate crop dimensions
-        target_ratio = 9 / 16
-        crop_w = int(orig_h * target_ratio)
-        crop_h = orig_h
-        out_w, out_h = 1080, 1920
-        
-        # Face detector
-        face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        )
-        
-        # Downscale factor for detection only (see _FACE_DETECT_MAX_W above).
-        detect_scale = min(1.0, self._FACE_DETECT_MAX_W / orig_w) if orig_w > 0 else 1.0
-        detect_min_size = max(20, int(50 * detect_scale))
-        
-        # First pass: analyze frames (0-40%)
-        print(f"[DEBUG] Pass 1: Analyzing frames (every {self._FACE_DETECT_EVERY_N} frames, "
-              f"detect scale {detect_scale:.2f})...")
-        sys.stdout.flush()
-        
-        crop_positions = []
-        current_target = orig_w / 2
-        frame_count = 0
-        last_log_time = 0
-        import time
-        
-        while True:
-            # Check for cancellation
-            if self.is_cancelled():
-                cap.release()
-                raise Exception("Cancelled by user")
-            
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Only run the (expensive) cascade detector every Nth frame, on a
-            # downscaled copy. current_target is held from the last detection
-            # on the frames we skip - identical to how the code already
-            # behaves on any frame where no face is found.
-            if frame_count % self._FACE_DETECT_EVERY_N == 0:
-                if detect_scale < 1.0:
-                    small = cv2.resize(frame, None, fx=detect_scale, fy=detect_scale,
-                                        interpolation=cv2.INTER_AREA)
-                else:
-                    small = frame
-                gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-                faces = face_cascade.detectMultiScale(
-                    gray, 1.1, 5, minSize=(detect_min_size, detect_min_size)
-                )
-                
-                if len(faces) > 0:
-                    # Find largest face, scale coordinates back to full resolution
-                    largest = max(faces, key=lambda f: f[2] * f[3])
-                    current_target = (largest[0] + largest[2] / 2) / detect_scale
-            
-            crop_x = int(current_target - crop_w / 2)
-            crop_x = max(0, min(crop_x, orig_w - crop_w))
-            crop_positions.append(crop_x)
-            
-            frame_count += 1
-            
-            # Update progress more frequently with time-based logging
-            current_time = time.time()
-            if frame_count % 30 == 0 or (current_time - last_log_time) > 2:  # Every 30 frames or 2 seconds
-                progress = (frame_count / total_frames) * 0.4  # 0-40%
-                print(f"[DEBUG] Pass 1 progress: {progress*100:.1f}% ({frame_count}/{total_frames} frames)")
-                sys.stdout.flush()
-                progress_callback(progress)
-                last_log_time = current_time
-        
-        print(f"[DEBUG] Analyzed {frame_count} frames")
-        
-        # Stabilize positions
-        crop_positions = self.stabilize_positions(crop_positions)
-        progress_callback(0.45)
-        
-        # Second pass: crop/resize each frame and stream it straight into a
-        # SINGLE FFmpeg encode (45-100%).
-        #
-        # The old implementation wrote every cropped/resized frame out via
-        # cv2.VideoWriter using the 'mp4v' software codec to a temp file,
-        # then ran a *separate* FFmpeg pass to decode that temp file again
-        # and re-encode it (merging in audio) with the real encoder. That's
-        # a full extra decode+encode generation that exists purely as
-        # scratch space and adds nothing to the final output - here we pipe
-        # raw frames directly into the real encoder (GPU or CPU, same
-        # get_video_encoder_args() used everywhere else) in one pass, with
-        # the original audio muxed in via a second FFmpeg input. This also
-        # means one fewer lossy re-encode generation between source and
-        # output (slightly higher quality), and no multi-hundred-MB
-        # intermediate file on disk.
-        print("[DEBUG] Pass 2: Cropping frames and encoding (single pass)...")
-        sys.stdout.flush()
-        
-        def _run_piped_encode(encoder_args):
-            """One attempt at the crop+resize+pipe-to-FFmpeg encode. Re-seeks
-            the capture to frame 0 itself, so it's safe to call twice (e.g.
-            once with GPU args, once with a CPU fallback)."""
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            
-            ffmpeg_cmd = [
-                self.ffmpeg_path, "-y",
-                "-f", "rawvideo",
-                "-pix_fmt", "bgr24",
-                "-s", f"{out_w}x{out_h}",
-                "-r", str(fps),
-                "-i", "pipe:0",
-                "-i", input_path,
-                *encoder_args,
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "192k",
-                "-map", "0:v:0", "-map", "1:a:0",
-                "-shortest",
-                output_path
-            ]
-            self.log_ffmpeg_command(ffmpeg_cmd, "Portrait Crop + Encode (single pass, piped frames)")
-            
-            stderr_log_path = str(self.temp_dir / f"portrait_ffmpeg_stderr_{int(time.time() * 1000)}.log")
-            proc = None
-            frame_idx = 0
-            
-            try:
-                with open(stderr_log_path, "wb") as stderr_f:
-                    proc = subprocess.Popen(
-                        ffmpeg_cmd,
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.DEVNULL,
-                        stderr=stderr_f,
-                        creationflags=SUBPROCESS_FLAGS
-                    )
-                    
-                    last_log_time = 0
-                    last_frame_time = time.time()
-                    
-                    while True:
-                        if self.is_cancelled():
-                            raise Exception("Cancelled by user")
-                        
-                        # Watchdog: check if we're stuck (no frame processed in 30 seconds)
-                        current_time = time.time()
-                        if current_time - last_frame_time > 30:
-                            raise Exception(f"Portrait conversion timeout: stuck at frame {frame_idx}/{total_frames}")
-                        
-                        ret, frame = cap.read()
-                        if not ret:
-                            break
-                        
-                        last_frame_time = current_time
-                        
-                        crop_x = crop_positions[frame_idx] if frame_idx < len(crop_positions) else crop_positions[-1]
-                        cropped = frame[0:crop_h, crop_x:crop_x+crop_w]
-                        resized = cv2.resize(cropped, (out_w, out_h), interpolation=cv2.INTER_LANCZOS4)
-                        
-                        try:
-                            proc.stdin.write(resized.tobytes())
-                        except BrokenPipeError:
-                            # FFmpeg exited early (likely an encoder error) -
-                            # stop feeding it, the returncode check below
-                            # will surface the real error.
-                            break
-                        
-                        frame_idx += 1
-                        
-                        if frame_idx % 30 == 0 or (current_time - last_log_time) > 2:
-                            progress = 0.45 + (frame_idx / total_frames) * 0.55  # 45-100%
-                            print(f"[DEBUG] Pass 2 progress: {progress*100:.1f}% ({frame_idx}/{total_frames} frames)")
-                            sys.stdout.flush()
-                            progress_callback(progress)
-                            last_log_time = current_time
-                    
-                    try:
-                        proc.stdin.close()
-                    except Exception:
-                        pass
-                    proc.wait()
-            except Exception:
-                if proc is not None and proc.poll() is None:
-                    try:
-                        proc.stdin.close()
-                    except Exception:
-                        pass
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=5)
-                    except Exception:
-                        proc.kill()
-                raise
-            
-            stderr_text = ""
-            try:
-                with open(stderr_log_path, "r", errors="ignore") as f:
-                    stderr_text = f.read()
-                os.unlink(stderr_log_path)
-            except Exception:
-                pass
-            
-            return proc.returncode, frame_idx, stderr_text
-        
-        try:
-            encoder_args = self.get_video_encoder_args()
-            returncode, frame_idx, stderr_text = _run_piped_encode(encoder_args)
-            
-            # Same safety net as every other FFmpeg call in this class: if the
-            # failure looks like a GPU encoder problem, fall back to CPU and
-            # retry once rather than hard-failing the whole clip.
-            if returncode != 0 and self._is_gpu_encoder_error(stderr_text):
-                self.log("  ⚠ Portrait encode failed with GPU encoder error, retrying on CPU...")
-                reason_line = next(
-                    (ln.strip() for ln in stderr_text.splitlines()
-                     if 'error' in ln.lower() or 'unable' in ln.lower()),
-                    ''
-                )
-                self._disable_gpu_acceleration_runtime(reason_line[:120])
-                returncode, frame_idx, stderr_text = _run_piped_encode(self._CPU_FALLBACK_ARGS)
-        finally:
-            cap.release()
-            print("[DEBUG] Released VideoCapture")
-            sys.stdout.flush()
-        
-        print(f"[DEBUG] Wrote {frame_idx} frames, FFmpeg returncode={returncode}")
-        sys.stdout.flush()
-        
-        if returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
-            print(f"[FFMPEG ERROR] {stderr_text[-4000:]}")
-            sys.stdout.flush()
-            raise Exception(f"Portrait FFmpeg encode failed:\n{stderr_text[-4000:]}")
-        
-        progress_callback(1.0)
-        print("[DEBUG] Portrait conversion complete")
-        sys.stdout.flush()
-    
+        """Compatibility entry point using the shared stable framing renderer."""
+        from services.framing import frame_video
+        return frame_video(self, input_path, output_path, progress_callback, tracking_mode="opencv")
+
     def convert_to_portrait_mediapipe_with_progress(self, input_path: str, output_path: str, progress_callback):
-        """Convert landscape to 9:16 portrait with active speaker detection and progress (MediaPipe)"""
-        
-        # Initialize MediaPipe
-        self._init_mediapipe()
-        
-        self.log("[DEBUG] Starting MediaPipe portrait conversion...")
-        print("[DEBUG] Starting MediaPipe portrait conversion...")
-        sys.stdout.flush()
-        
-        cap = cv2.VideoCapture(input_path)
-        if not cap.isOpened():
-            raise Exception(f"Failed to open video: {input_path}")
-        
-        orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-        self.log(f"[DEBUG] Video: {orig_w}x{orig_h}, {fps}fps, {total_frames} frames")
-        print(f"[DEBUG] Video: {orig_w}x{orig_h}, {fps}fps, {total_frames} frames")
-        sys.stdout.flush()
-        
-        if total_frames == 0 or fps == 0:
-            cap.release()
-            raise Exception(f"Invalid video properties: {total_frames} frames, {fps} fps")
-        
-        # Calculate crop dimensions
-        target_ratio = 9 / 16
-        crop_w = int(orig_h * target_ratio)
-        crop_h = orig_h
-        out_w, out_h = 1080, 1920
-        
-        # MediaPipe settings
-        lip_threshold = self.mediapipe_settings.get("lip_activity_threshold", 0.15)
-        switch_threshold = self.mediapipe_settings.get("switch_threshold", 0.3)
-        min_shot_duration = self.mediapipe_settings.get("min_shot_duration", 90)
-        center_weight = self.mediapipe_settings.get("center_weight", 0.3)
-        
-        # First pass: analyze frames with MediaPipe (0-40%)
-        print("[DEBUG] Pass 1: Analyzing lip movements with MediaPipe...")
-        sys.stdout.flush()
-        
-        crop_positions = []
-        face_activities = []
-        frame_count = 0
-        last_log_time = 0
-        import time
-        
-        with self.mp_face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=3,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        ) as face_mesh:
-            
-            prev_lip_distances = {}
-            
-            while True:
-                if self.is_cancelled():
-                    cap.release()
-                    raise Exception("Cancelled by user")
-                
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                
-                # Convert to RGB for MediaPipe
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                results = face_mesh.process(rgb_frame)
-                
-                best_face_x = orig_w / 2
-                max_activity = 0
-                
-                if results.multi_face_landmarks:
-                    faces_data = []
-                    
-                    for face_id, face_landmarks in enumerate(results.multi_face_landmarks):
-                        # Calculate lip activity
-                        activity = self._calculate_lip_activity(
-                            face_landmarks,
-                            orig_w,
-                            orig_h,
-                            prev_lip_distances.get(face_id, None)
-                        )
-                        
-                        # Get face center position
-                        face_x = face_landmarks.landmark[1].x * orig_w
-                        
-                        # Combined score
-                        center_score = 1.0 - abs(face_x - orig_w / 2) / (orig_w / 2)
-                        combined_score = (activity * (1 - center_weight)) + (center_score * center_weight)
-                        
-                        faces_data.append({
-                            'x': face_x,
-                            'activity': activity,
-                            'combined_score': combined_score
-                        })
-                        
-                        # Update previous lip distance
-                        upper_lip = face_landmarks.landmark[13]
-                        lower_lip = face_landmarks.landmark[14]
-                        lip_distance = abs(upper_lip.y - lower_lip.y)
-                        prev_lip_distances[face_id] = lip_distance
-                    
-                    if faces_data:
-                        best_face = max(faces_data, key=lambda f: f['combined_score'])
-                        best_face_x = best_face['x']
-                        max_activity = best_face['activity']
-                
-                crop_x = int(best_face_x - crop_w / 2)
-                crop_x = max(0, min(crop_x, orig_w - crop_w))
-                crop_positions.append(crop_x)
-                face_activities.append(max_activity)
-                
-                frame_count += 1
-                
-                current_time = time.time()
-                if frame_count % 30 == 0 or (current_time - last_log_time) > 2:
-                    progress = (frame_count / total_frames) * 0.4
-                    print(f"[DEBUG] Pass 1 progress: {progress*100:.1f}% ({frame_count}/{total_frames} frames)")
-                    sys.stdout.flush()
-                    progress_callback(progress)
-                    last_log_time = current_time
-        
-        print(f"[DEBUG] Analyzed {frame_count} frames with MediaPipe")
-        sys.stdout.flush()
-        
-        # Stabilize positions (40-45%)
-        progress_callback(0.4)
-        crop_positions = self._stabilize_positions_with_activity(
-            crop_positions,
-            face_activities,
-            min_shot_duration,
-            switch_threshold
-        )
-        progress_callback(0.45)
-        
-        # Second pass: create video (45-85%)
-        print("[DEBUG] Pass 2: Creating portrait video...")
-        sys.stdout.flush()
-        
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        temp_video = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
-        
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(temp_video, fourcc, fps, (out_w, out_h))
-        
-        if not out.isOpened():
-            cap.release()
-            raise Exception(f"Failed to create VideoWriter: {temp_video}")
-        
-        frame_idx = 0
-        last_log_time = 0
-        last_frame_time = time.time()
-        
-        while True:
-            if self.is_cancelled():
-                cap.release()
-                out.release()
-                try:
-                    os.unlink(temp_video)
-                except:
-                    pass
-                raise Exception("Cancelled by user")
-            
-            current_time = time.time()
-            if current_time - last_frame_time > 30:
-                cap.release()
-                out.release()
-                raise Exception(f"Portrait conversion timeout: stuck at frame {frame_idx}/{total_frames}")
-            
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            last_frame_time = current_time
-            
-            crop_x = crop_positions[frame_idx] if frame_idx < len(crop_positions) else crop_positions[-1]
-            cropped = frame[0:crop_h, crop_x:crop_x+crop_w]
-            resized = cv2.resize(cropped, (out_w, out_h), interpolation=cv2.INTER_LANCZOS4)
-            
-            success = out.write(resized)
-            if not success:
-                print(f"[WARNING] Failed to write frame {frame_idx}")
-                sys.stdout.flush()
-            
-            frame_idx += 1
-            
-            if frame_idx % 30 == 0 or (current_time - last_log_time) > 2:
-                progress = 0.45 + (frame_idx / total_frames) * 0.4
-                print(f"[DEBUG] Pass 2 progress: {progress*100:.1f}% ({frame_idx}/{total_frames} frames)")
-                sys.stdout.flush()
-                progress_callback(progress)
-                last_log_time = current_time
-        
-        print(f"[DEBUG] Created {frame_idx} frames")
-        sys.stdout.flush()
-        
-        cap.release()
-        out.release()
-        
-        if not os.path.exists(temp_video) or os.path.getsize(temp_video) < 1000:
-            raise Exception(f"Failed to create temp video: {temp_video}")
-        
-        print(f"[DEBUG] Temp video size: {os.path.getsize(temp_video)} bytes")
-        sys.stdout.flush()
-        
-        progress_callback(0.85)
-        
-        # Merge with audio (85-100%) using GPU/CPU encoder
-        print("[DEBUG] Pass 3: Merging audio...")
-        sys.stdout.flush()
-        
-        encoder_args = self.get_video_encoder_args()
-        cmd = [
-            self.ffmpeg_path, "-y",
-            "-i", temp_video,
-            "-i", input_path,
-            *encoder_args,
-            "-c:a", "aac", "-b:a", "192k",
-            "-map", "0:v:0", "-map", "1:a:0",
-            "-shortest",
-            output_path
-        ]
-        
-        self.log_ffmpeg_command(cmd, "MediaPipe Portrait Merge Audio")
-        result = self._run_ffmpeg_subprocess(cmd)
-        
-        if result.returncode != 0:
-            print(f"[FFMPEG ERROR] {result.stderr}")
-            sys.stdout.flush()
-            raise Exception("Audio merge failed")
-        
-        print("[DEBUG] Audio merge complete")
-        sys.stdout.flush()
-        
-        progress_callback(1.0)
-        print("[DEBUG] MediaPipe portrait conversion complete")
-        sys.stdout.flush()
-        
-        # Cleanup
-        try:
-            os.unlink(temp_video)
-            print("[DEBUG] Cleaned up temp video")
-            sys.stdout.flush()
-        except Exception as e:
-            print(f"[WARNING] Failed to cleanup temp video: {e}")
-            sys.stdout.flush()
-    
+        """Compatibility entry point using the shared stable framing renderer."""
+        from services.framing import frame_video
+        return frame_video(self, input_path, output_path, progress_callback, tracking_mode="mediapipe")
+
     def add_hook_with_progress(self, input_path: str, hook_text: str, output_path: str, progress_callback) -> float:
         """Add hook scene at the beginning with progress tracking"""
         
@@ -4762,7 +4101,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         transcribe_source = audio_source if audio_source else input_path
         
         # Extract audio from video
-        audio_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False).name
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as handle:
+            audio_file = handle.name
         cmd = [
             self.ffmpeg_path, "-y",
             "-i", transcribe_source,
@@ -4831,10 +4171,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if progress_callback:
             progress_callback(0.5)
         
+        if subtitle_style in {"timothy_focus", "timothy_cinematic", "ruang_founder", "ruang_witness"}:
+            from services.reference_templates import render_captions
+            render_captions(input_path, output_path, transcript, subtitle_style, self.ffmpeg_path, time_offset,
+                runner=lambda command, duration: self.run_ffmpeg_with_progress(command, duration,
+                    lambda p: progress_callback(0.5 + p * 0.5) if progress_callback else None))
+            return
+        if subtitle_style == "podcast_square":
+            from services.podcast_template import render_word_captions
+            render_word_captions(input_path, output_path, transcript, self.ffmpeg_path, time_offset,
+                runner=lambda command, duration: self.run_ffmpeg_with_progress(command, duration,
+                    lambda p: progress_callback(0.5 + p * 0.5) if progress_callback else None))
+            return
+
         # Create ASS subtitle file
-        ass_file = tempfile.NamedTemporaryFile(mode='w', suffix='.ass', delete=False, encoding='utf-8').name
-        if subtitle_style == "v1":
-            self.create_ass_subtitle_capcut(transcript, ass_file, time_offset)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ass', delete=False, encoding='utf-8') as handle:
+            ass_file = handle.name
+        if subtitle_style in ("capcut", "minimal", "bold", "hormozi", "karaoke"):
+            self.create_ass_subtitle_capcut(transcript, ass_file, time_offset, style=subtitle_style)
+        elif subtitle_style == "v1":
+            self.create_ass_subtitle_capcut(transcript, ass_file, time_offset, style="capcut")
         elif subtitle_style == "v3":
             self.create_ass_subtitle_v3(transcript, ass_file, time_offset)
         else:

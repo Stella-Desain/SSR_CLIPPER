@@ -11,7 +11,8 @@ function addChip(container, value) {
   const chip = document.createElement('div');
   chip.className = 'chip';
   chip.style.cssText = 'background:#e9ecef;padding:4px 8px;border-radius:16px;font-size:12px;display:flex;align-items:center;gap:4px;';
-  chip.innerHTML = `<span>${value}</span><span style="cursor:pointer;color:#dc3545;font-weight:bold;">×</span>`;
+  const chipText=document.createElement('span');chipText.textContent=value;
+  const chipClose=document.createElement('span');chipClose.textContent='×';chipClose.style.cursor='pointer';chip.append(chipText,chipClose);
   chip.querySelector('span:last-child').addEventListener('click', () => chip.remove());
   container.insertBefore(chip, container.lastElementChild); // before the input
 }
@@ -185,9 +186,8 @@ function applyExtractedBrief(res) {
   const b = d.brief || {};
   f.durasiMinInput.value = b.durasi_min || 15;
   f.durasiMaxInput.value = b.durasi_max || 180;
-  f.maxClipsPerDayInput.value = b.max_clips_per_day || 2;
   setChips(f.hashtagsInput, b.hashtags || []);
-  f.taggedAccountsInput.value = (b.tagged_accounts || []).join(', ');
+  f.setTaggedAccounts(b);
   setHooksList(f.hooksList, b.hooks || []);
   f.catatanArea.value = b.catatan || '';
   setChips(f.anglesInput, b.angles || []);
@@ -239,14 +239,17 @@ async function refreshCampaignList() {
   
   // Update home dropdown
   const select = homeView.fields.campaign;
-  select.innerHTML = '<option value="">Tanpa campaign</option>';
+  const selectedCampaignId = select.value;
+  select.innerHTML = '<option value="">Pilih campaign</option>';
   
   campaigns.forEach(c => {
     // Add to home dropdown
+    const campaignStatus = c.status || 'active';
     const opt = document.createElement('option');
     opt.value = c.id;
-    opt.textContent = c.name;
-    select.appendChild(opt);
+    opt.textContent = c.name + (campaignStatus === 'draft' ? ' (Draft — aktifkan di Campaign)' : '');
+    opt.disabled = campaignStatus !== 'active';
+    if (campaignStatus === 'active' || campaignStatus === 'draft') select.appendChild(opt);
 
     // Add to grid
     const card = document.createElement('div');
@@ -254,10 +257,11 @@ async function refreshCampaignList() {
     card.style.cssText = 'padding:16px;display:flex;flex-direction:column;gap:12px;cursor:pointer;position:relative;overflow:hidden;';
     
     // Banner 3:2
-    if (c.banner_path) {
-      const bannerUrl = c.banner_path.replace(/\\/g, '/');
+    if (c.banner_path || /^https?:\/\//.test(c.external_campaign?.image_url || '')) {
+      const bannerUrl = c.banner_path ? 'file:///' + c.banner_path.replace(/\\/g, '/') : c.external_campaign.image_url;
       const banner = document.createElement('div');
-      banner.style.cssText = `width:100%;aspect-ratio:3/2;background-image:url("file:///${bannerUrl}");background-size:cover;background-position:center;border-radius:4px;`;
+      banner.style.cssText = 'width:100%;aspect-ratio:3/2;background-size:cover;background-position:center;border-radius:4px;';
+      banner.style.backgroundImage = `url(${JSON.stringify(bannerUrl)})`;
       card.appendChild(banner);
     }
     
@@ -284,6 +288,14 @@ async function refreshCampaignList() {
     topRow.appendChild(status);
     
     card.appendChild(topRow);
+    if (campaignStatus !== 'active') {
+      const statusLabel = document.createElement('span');
+      statusLabel.className = 'wf-badge';
+      statusLabel.style.alignSelf = 'flex-start';
+      statusLabel.textContent = campaignStatus === 'draft' ? 'Draft · belum aktif' : 'Diarsipkan';
+      statusLabel.title = 'Untuk digunakan di Create Clip, ubah Status menjadi Active lalu simpan campaign.';
+      card.appendChild(statusLabel);
+    }
     
     // Stats
     const statStr = document.createElement('div');
@@ -330,6 +342,8 @@ async function refreshCampaignList() {
     card.addEventListener('click', () => openCampaignEdit(c.id));
     grid.appendChild(card);
   });
+  select.value = campaigns.some(c => c.id === selectedCampaignId && (c.status || 'active') === 'active') ? selectedCampaignId : '';
+  select.dispatchEvent(new Event('change'));
 }
 
 async function populateAccountPicker(selectedIds = []) {
@@ -372,9 +386,12 @@ async function populateAccountPicker(selectedIds = []) {
   updateAccountCounter();
 }
 
+let campaignOpenSequence=0;
 async function openCampaignEdit(id = null) {
+  const sequence=++campaignOpenSequence;
   currentCampaignId = id;
   const f = campaignEditView.fields;
+  setActiveView('campaign-edit');
   
   // Reset form
   f.nameInput.value = '';
@@ -382,7 +399,7 @@ async function openCampaignEdit(id = null) {
   f.durasiMinInput.value = '15';
   f.durasiMaxInput.value = '180';
   setChips(f.hashtagsInput, []);
-  f.taggedAccountsInput.value = '';
+  f.setTaggedAccounts();
   setHooksList(f.hooksList, []);
   f.catatanArea.value = '';
   setChips(f.anglesInput, []);
@@ -404,6 +421,7 @@ async function openCampaignEdit(id = null) {
 
   if (id) {
     const campaigns = await window.pywebview.api.get_campaigns();
+    if(sequence!==campaignOpenSequence)return;
     const c = campaigns.find(x => x.id === id);
     if (c) {
       f.nameInput.value = c.name;
@@ -412,9 +430,8 @@ async function openCampaignEdit(id = null) {
       const b = c.brief || {};
       f.durasiMinInput.value = b.durasi_min || 15;
       f.durasiMaxInput.value = b.durasi_max || 180;
-      f.maxClipsPerDayInput.value = b.max_clips_per_day || 2;
       setChips(f.hashtagsInput, b.hashtags || []);
-      f.taggedAccountsInput.value = (b.tagged_accounts || []).join(', ');
+      f.setTaggedAccounts(b);
       setHooksList(f.hooksList, b.hooks || []);
       f.catatanArea.value = b.catatan || c.context || '';
       setChips(f.anglesInput, b.angles || []);
@@ -435,6 +452,7 @@ async function openCampaignEdit(id = null) {
       }
       
       const stats = await window.pywebview.api.get_campaign_stats(id);
+      if(sequence!==campaignOpenSequence)return;
       if (stats) {
           f.statsDiv.style.display = 'block';
           f.statsDiv.innerHTML = `<strong>Statistics:</strong><br/>${stats.account_count || 0} akun terhubung<br/>${stats.clip_uploaded || 0} clip diupload &middot; ${stats.clip_in_stock || 0} di stok`;
@@ -453,8 +471,7 @@ async function openCampaignEdit(id = null) {
     }
   }
   
-  populateAccountPicker(selectedAccounts);
-  setActiveView('campaign-edit');
+  // Account profiles are populated by campaign-workspace.js.
 }
 
 async function saveCampaign() {
@@ -468,14 +485,14 @@ async function saveCampaign() {
       durasi_min: parseInt(f.durasiMinInput.value) || 15,
       durasi_max: parseInt(f.durasiMaxInput.value) || 180,
       hashtags: getChipValues(f.hashtagsInput),
-      tagged_accounts: f.taggedAccountsInput.value.split(',').map(s => s.trim()).filter(Boolean),
+      tagged_accounts: [],
+      tagged_accounts_by_platform: f.getTaggedAccounts(),
       hooks: getHooksListValues(f.hooksList),
       catatan: f.catatanArea.value.trim(),
       angles: getChipValues(f.anglesInput),
       persona: f.personaArea.value.trim(),
       tujuan: f.tujuanInput.value.trim(),
       cta: f.ctaInput.value.trim(),
-      max_clips_per_day: parseInt(f.maxClipsPerDayInput.value) || 2
     },
     do_rules: getRuleListValues(f.doRulesList),
     dont_rules: getRuleListValues(f.dontRulesList),
